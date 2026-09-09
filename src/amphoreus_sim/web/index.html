@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>翁法罗斯 · 世界观察</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <p class="eyebrow">AMPHOREUS WORLD SIMULATOR</p>
+        <h1>翁法罗斯 · 世界观察</h1>
+        <p id="subtitle">正在读取世界状态……</p>
+      </div>
+      <div class="controls">
+        <button id="step">推进一年</button>
+        <button id="advance">推进 10 年</button>
+        <button id="reset" class="secondary">重置世界</button>
+      </div>
+    </header>
+
+    <nav class="view-tabs" aria-label="观察页面">
+      <button class="tab active" data-view="overview">世界总览</button>
+      <button class="tab" data-view="regions">地区</button>
+      <button class="tab" data-view="people">人物</button>
+      <button class="tab" data-view="titans">泰坦</button>
+      <button class="tab" data-view="history">历史</button>
+    </nav>
+
+    <section class="view-panel active" id="overview-view">
+      <section class="metrics" id="metrics"></section>
+      <article class="overview-card" id="overview-summary"></article>
+    </section>
+
+    <section class="view-panel" id="regions-view">
+      <article>
+        <div class="section-title"><h2>区域与黑潮</h2><span>黑潮越高，区域越危险</span></div>
+        <div id="regions" class="regions"></div>
+      </article>
+    </section>
+    <section class="view-panel" id="people-view">
+      <article>
+        <div class="section-title"><h2>历史焦点人物</h2><span>只显示确实改变过世界状态的人</span></div>
+        <div id="person-detail" class="person-detail">点击人物可查看其关系、誓言与组织。</div>
+        <div id="people" class="people"></div>
+      </article>
+    </section>
+
+    <section class="view-panel" id="titans-view">
+      <div class="section-title"><h2>十二泰坦</h2><span>神躯稳定度与火种状态</span></div>
+      <div id="titans" class="titans"></div>
+    </section>
+    <section class="view-panel" id="history-view">
+      <section class="layout bottom-layout">
+      <article>
+        <div class="section-title"><h2>组织与势力</h2><span>成员、领袖、目的与影响力</span></div>
+        <div id="organizations" class="organizations"></div>
+      </article>
+      <article>
+        <div class="section-title"><h2>最近历史</h2><span>最近 25 条结构化事件</span></div>
+        <div id="events" class="events" aria-live="polite"></div>
+      </article>
+    </section>
+      <section class="layout bottom-layout">
+        <article>
+          <div class="section-title"><h2>黑潮危机</h2><span>正在发生或已被稳定的地区事件</span></div>
+          <div id="crises" class="events"></div>
+        </article>
+        <article>
+          <div class="section-title"><h2>难民与资源危机</h2><span>由避难容量突破触发的多年事件</span></div>
+          <div id="refuge-crises" class="events"></div>
+        </article>
+      </section>
+      <section class="layout bottom-layout">
+        <article>
+          <div class="section-title"><h2>历史人物档案</h2><span>重要人物死亡后仍保留在历史中</span></div>
+          <div id="archive" class="people"></div>
+        </article>
+      </section>
+    </section>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>

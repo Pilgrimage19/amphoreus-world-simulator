@@ -1,0 +1,140 @@
+const byId = (id) => document.getElementById(id);
+const stageNames = {child: "儿童", youth: "青年", adult: "成人", elder: "长者"};
+const factorNames = {destruction: "毁灭", remembrance: "记忆", erudition: "智识", harmony: "同谐", elation: "欢愉", nihility: "虚无", hunt: "巡猎", beauty: "纯美", preservation: "存护", equilibrium: "均衡", order: "秩序", permanence: "不朽"};
+const regionStatusNames = {stable: "稳定", strained: "承压", overwhelmed: "避难超载", endangered: "黑潮威胁", lost: "已失陷"};
+
+function tideClass(value) {
+  if (value >= 60) return "danger";
+  if (value >= 30) return "warning";
+  return "safe";
+}
+
+function render(state) {
+  const regions = Object.values(state.regions);
+  const averageTide = Math.round(regions.reduce((sum, region) => sum + region.black_tide, 0) / regions.length);
+  const worldStatus = state.ended ? (state.ending_summary || "世界历史已经结束") : "世界仍在演化";
+  byId("subtitle").textContent = `种子 ${state.seed} · 第 ${state.year} 年 · ${worldStatus}`;
+  byId("step").disabled = state.ended;
+  byId("advance").disabled = state.ended;
+  byId("metrics").innerHTML = [
+    ["地区居民总数", state.population.total_civilians.toLocaleString()],
+    ["独立人物样本", state.population.alive_individuals],
+    ["历史焦点", Object.keys(state.historical_focus).length],
+    ["平均黑潮", `${averageTide} / 100`],
+    ["世界劫余", state.world_wear],
+    ["区域数量", regions.length],
+    ["火种持有", Object.values(state.titans).filter((titan) => titan.coreflame_holder).length],
+    ["活跃组织", Object.values(state.organizations).filter((org) => org.member_count > 0).length],
+  ].map(([label, value]) => `<div class="metric"><span>${label}</span><strong>${value}</strong></div>`).join("");
+  const unstable = regions.slice().sort((a, b) => (b.black_tide + b.tension) - (a.black_tide + a.tension))[0];
+  const fires = Object.values(state.titans).filter((titan) => titan.coreflame_holder);
+  const titanNames = Object.fromEntries(Object.values(state.titans).map((titan) => [titan.id, titan.name]));
+  byId("overview-summary").innerHTML = `<div class="section-title"><h2>本年世界判断</h2><span>由系统状态自动归纳</span></div>
+    <p>${unstable ? `最需要关注的是<strong>${unstable.name}</strong>：黑潮 ${unstable.black_tide}，社会紧张 ${unstable.tension}。` : "正在等待地区数据。"}</p>
+    <p>世界劫余为 ${state.world_wear}：它代表尚未再创世而累积的不可逆损伤，会在长期抬高黑潮残留源并削弱泰坦。</p>
+    <p>已被承接的火种：${fires.length ? fires.map((titan) => `${titan.name}（${titan.domain}）`).join("、") : "尚无"}。</p>
+    <p>历史焦点只保留造成过世界级变化的人；普通人物仍持续生活、结社、迁徙和形成关系，但不会因重复动作霸占这个列表。</p>`;
+
+  byId("regions").innerHTML = regions.map((region) => `
+    <div class="region-card">
+      <div><strong>${region.name}</strong><span class="badge ${tideClass(region.black_tide)}">黑潮 ${region.black_tide}</span></div>
+      <div class="bar"><i class="${tideClass(region.black_tide)}" style="width:${region.black_tide}%"></i></div>
+      <small>居民 ${region.population.toLocaleString()} / 避难容量 ${region.refuge_capacity.toLocaleString()}（上限 ${region.refuge_capacity_limit.toLocaleString()}） · ${regionStatusNames[region.status] || region.status}</small>
+      <small>粮食储备 ${region.food.toLocaleString()} · 秩序 ${region.order} · 知识 ${region.knowledge} · 紧张 ${region.tension}</small>
+      <small>主领地 ${titanNames[region.titan_id] || "无"} · 信仰 ${Object.entries(region.titan_faiths).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([id, value]) => `${titanNames[id] || id} ${value}`).join(" / ")}</small>
+      <small>黑潮残留源 ${region.tide_source} · 防线 ${region.defense} · 伤痕 ${region.scars} · 独立人物 ${region.independent_people}</small>
+    </div>`).join("");
+
+  const people = Object.values(state.historical_focus);
+  byId("people").innerHTML = people.length ? people.map((person) => `
+    <button class="person-card" data-person-id="${person.id}">
+      <div><strong>${person.name}</strong><span>${person.golden_status === "demigod" ? "半神" : person.golden_status === "awakened" ? "黄金裔候选" : "人物"}</span></div>
+      <p>${person.region_id} · ${person.age} 岁 · ${stageNames[person.life_stage]} · 主导因子：${factorNames[person.dominant_factor]}</p>
+      <small>世界影响 ${person.world_impact} · 个人影响 ${person.influence} · 关系 ${person.relationship_count}</small>
+    </button>`).join("") : "<p class='empty'>尚未有人留下足以进入历史焦点的影响。</p>";
+
+  byId("titans").innerHTML = Object.values(state.titans).map((titan) => `
+    <div class="titan-card">
+      <strong>${titan.name}</strong><span>${titan.domain} · ${titan.group}</span>
+      <small>因子 ${factorNames[titan.factor]} · 稳定 ${titan.stability} · 腐化 ${titan.corruption}</small>
+      <small>${titan.trial_progress ? `试炼进度 ${titan.trial_progress}/100` : "尚未出现满足条件的试炼"}</small>
+      <em>${titan.coreflame_holder ? `火种已被承接：${titan.coreflame_holder}` : "火种仍在泰坦"}</em>
+    </div>`).join("");
+
+  byId("organizations").innerHTML = Object.values(state.organizations).map((organization) => `
+    <div class="organization-card">
+      <strong>${organization.name}</strong><span>${organization.kind} · ${organization.region_id}</span>
+      <small>成员 ${organization.member_count} · 影响力 ${organization.influence}</small>
+      <p>${organization.purpose}</p>
+    </div>`).join("");
+
+  byId("events").innerHTML = state.recent_events.slice().reverse().map((event) => `
+    <div class="event-row"><strong>第 ${event.year} 年</strong><span>${event.summary}</span></div>`).join("") || "<p class='empty'>尚无事件。</p>";
+
+  const regionNames = Object.fromEntries(regions.map((region) => [region.id, region.name]));
+  const crises = Object.values(state.crises).sort((a, b) => Number(b.active) - Number(a.active) || b.stage - a.stage);
+  const strategyNames = {hold: "死守", evacuate: "撤离", research: "研究"};
+  byId("crises").innerHTML = crises.map((crisis) => `
+    <div class="event-row"><strong>${crisis.active ? "处理中" : crisis.outcome?.includes("failed") ? "已失败" : "已稳定"}</strong><span>${regionNames[crisis.region_id] || crisis.region_id} · ${crisis.stage}级黑潮 · 应对 ${crisis.response_points} · 参与者 ${crisis.participant_count}<br>死守 ${crisis.strategy_points.hold} / 撤离 ${crisis.strategy_points.evacuate} / 研究 ${crisis.strategy_points.research}${crisis.outcome ? ` · 结果：${strategyNames[crisis.outcome.replace("_failed", "")] || crisis.outcome}` : ""}</span></div>`).join("") || "<p class='empty'>尚未发生达到阈值的黑潮危机。</p>";
+
+  const refugeCrises = Object.values(state.refuge_crises || {}).sort((a, b) => Number(b.active) - Number(a.active) || b.started_year - a.started_year);
+  const refugeStrategyNames = {welcome: "接纳", ration: "配给", settle: "新聚居地"};
+  byId("refuge-crises").innerHTML = refugeCrises.map((crisis) => `
+    <div class="event-row"><strong>${crisis.active ? "处理中" : crisis.outcome?.includes("failed") ? "已失败" : "已安置"}</strong><span>${regionNames[crisis.region_id] || crisis.region_id} · 应对 ${crisis.response_points} · 参与者 ${crisis.participant_count}<br>接纳 ${crisis.strategy_points.welcome} / 配给 ${crisis.strategy_points.ration} / 新聚居地 ${crisis.strategy_points.settle}${crisis.outcome ? ` · 结果：${refugeStrategyNames[crisis.outcome.replace("_failed", "")] || crisis.outcome}` : ""}</span></div>`).join("") || "<p class='empty'>尚未出现突破避难容量的难民潮。</p>";
+
+  const archive = Object.values(state.historical_archive);
+  byId("archive").innerHTML = archive.map((person) => `
+    <button class="person-card" data-person-id="${person.id}">
+      <div><strong>${person.name}</strong><span>已故历史人物</span></div>
+      <p>${person.region_id} · ${person.death_year ? `第 ${person.death_year} 年离世` : "离世年份不明"}</p>
+      <small>世界影响 ${person.world_impact} · ${person.death_cause || "死因未记录"}</small>
+    </button>`).join("") || "<p class='empty'>尚无已故的重要人物。</p>";
+}
+
+async function showPerson(personId) {
+  const person = await request(`/api/person/${personId}`);
+  const relationships = person.relationship_details.slice(0, 8).map((relation) =>
+    `<li>${relation.target_name} · ${relation.kind} · 信任 ${relation.trust}${relation.oath ? ` · 誓言：${relation.oath}` : ""}</li>`).join("") || "<li>暂无活跃关系</li>";
+  const organization = person.organization ? `${person.organization.name}（${person.organization.kind}）` : "未加入组织";
+  const parents = person.parents.length ? person.parents.map((parent) => parent.name).join("、") : "无可追溯亲属记录";
+  const reasons = person.impact_reasons.length ? person.impact_reasons.join("；") : "尚未形成世界级影响";
+  const fate = person.alive ? "仍在世" : `第 ${person.death_year} 年离世：${person.death_cause || "死因未记录"}`;
+  const titanRelations = person.titan_relations.map((relation) => `${relation.name}（${relation.domain}）${relation.stance >= 0 ? "虔诚" : "反抗"} ${Math.abs(relation.stance)}`).join("、") || "尚未形成明确的泰坦关系";
+  byId("person-detail").innerHTML = `<strong>${person.name}</strong><p>${person.region_name} · ${person.age} 岁 · ${stageNames[person.life_stage]} · ${organization}</p><p>${fate}</p><p>亲属：${parents}</p><p>主导因子：${factorNames[person.dominant_factor]} · 世界影响 ${person.world_impact}</p><p>泰坦关系：${titanRelations}</p><p>影响来源：${reasons}</p><ul>${relationships}</ul>`;
+  document.querySelectorAll("[data-person-id]").forEach((card) => card.classList.toggle("selected", card.dataset.personId === personId));
+}
+
+async function request(path, options = {}) {
+  const response = await fetch(path, options);
+  if (!response.ok) throw new Error("无法读取世界状态");
+  return response.json();
+}
+
+byId("step").addEventListener("click", async () => {
+  byId("step").disabled = true;
+  try { render(await request("/api/step", {method: "POST"})); }
+  catch (error) {
+    byId("step").disabled = false;
+    byId("subtitle").textContent = error.message;
+  }
+});
+byId("advance").addEventListener("click", async () => {
+  byId("advance").disabled = true;
+  try { render(await request("/api/advance", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({years: 10})})); }
+  catch (error) {
+    byId("advance").disabled = false;
+    byId("subtitle").textContent = error.message;
+  }
+});
+byId("reset").addEventListener("click", async () => {
+  render(await request("/api/reset", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({})}));
+});
+document.addEventListener("click", (event) => {
+  const card = event.target.closest("[data-person-id]");
+  if (card) showPerson(card.dataset.personId);
+});
+document.querySelectorAll("[data-view]").forEach((tab) => tab.addEventListener("click", () => {
+  document.querySelectorAll("[data-view]").forEach((item) => item.classList.toggle("active", item === tab));
+  document.querySelectorAll(".view-panel").forEach((panel) => panel.classList.toggle("active", panel.id === `${tab.dataset.view}-view`));
+}));
+request("/api/state").then(render).catch((error) => { byId("subtitle").textContent = error.message; });
