@@ -28,6 +28,9 @@ EARTH_MIN_HOLDING_YEARS = 5
 EARTH_FOUNDATION_CAPACITY = 8_000
 REASON_EXAMS = ("辨真", "演绎", "衡世", "择未来")
 REASON_GOLDEN_QUOTA = 3
+LAW_STEWARDSHIP_YEARS = 5
+ROMANCE_WEAVES_REQUIRED = 3
+ROMANCE_SACRIFICE_WEAVES = 6
 
 TITAN_DATA = (
     ("aquila", "艾格勒", "天空", Factor.PRESERVATION, "支柱", "skyward"),
@@ -244,6 +247,8 @@ class Simulation:
         self._resolve_organizations()
         self._resolve_coreflame_trials()
         self._resolve_earth_authority()
+        self._resolve_law_authority()
+        self._resolve_romance_authority()
         self._resolve_reason_authority()
         self._update_historical_focus()
         self._emit_world_status()
@@ -716,6 +721,8 @@ class Simulation:
             event = self._act(person, region, action)
             self._record_earth_stewardship(person, region, action)
             self._resolve_relationships(person, action)
+            self._record_law_stewardship(person, region, action)
+            self._record_romance_weaving(person, region, action)
             self._form_social_ties(person)
             if event and notable < 12:
                 self._emit(*event)
@@ -830,6 +837,12 @@ class Simulation:
             weights["work"] += 35
             weights["aid"] += 12
             weights["organize"] += 8
+        if self._is_law_candidate(person) and (region.tension >= 25 or region.black_tide >= 25):
+            weights["organize"] += 30
+            weights["aid"] += 10
+        if self._is_romance_candidate(person):
+            weights["aid"] += 30
+            weights["organize"] += 18
         if person.life_stage() == "youth":
             weights["study"] += 50
             weights["work"] = max(1, weights["work"] // 3)
@@ -847,6 +860,9 @@ class Simulation:
         # practical work through which stewardship can be proven.
         if action == "flee" and self._is_earth_candidate(person) and region.status != "lost":
             action = "work"
+        if action == "conflict" and "talanton" in person.coreflames:
+            # The law-holder cannot exempt themself from the rule used to judge others.
+            action = "organize"
         if action == "work":
             region.food += 1 + person.body // 45
             if region.black_tide >= 25:
@@ -933,6 +949,55 @@ class Simulation:
         if previous_evidence < EARTH_STEWARDSHIP_YEARS == evidence:
             self._emit("earth_trial_ready", f"{person.name}在{region.name}持续守土，吉奥里亚的试炼开始回应。", (f"person:{person.id}:stewardship"), ("trial:georios:ready",), (person.id,))
 
+    def _record_law_stewardship(self, person: Person, region: Region, action: str) -> None:
+        """Talanton answers to a rule freely kept when keeping it is difficult."""
+        if not self._is_law_candidate(person) or region.status == "lost":
+            return
+        under_pressure = region.tension >= 25 or region.black_tide >= 25
+        if self.state.year < 50 or not under_pressure:
+            return
+        if "talanton_law_started" not in person.memories:
+            if action != "organize":
+                return
+            person.memories.append("talanton_law_started")
+            self._record_life_trace(person, "oath", responsibility=1)
+            self._emit("law_trial_started", f"{person.name}在{region.name}立下约束自己与众人的守望之律。", ("factor:order",), ("trial:talanton:started",), (person.id,))
+        previous = person.trial_evidence.get("talanton", 0)
+        if action in {"organize", "aid"}:
+            evidence = min(LAW_STEWARDSHIP_YEARS, previous + 1)
+            person.trial_evidence["talanton"] = evidence
+            self._record_life_trace(person, "organization_action", responsibility=1)
+            self._credit_impact(person, 1, f"在{region.name}危机中遵守并执行共同之律")
+            if previous < LAW_STEWARDSHIP_YEARS == evidence:
+                self._emit("law_trial_ready", f"{person.name}在危机中五次守住自己立下的律法，塔兰顿开始审判。", (f"person:{person.id}:law"), ("trial:talanton:ready",), (person.id,))
+        elif action == "conflict":
+            person.trial_evidence["talanton"] = max(0, previous - 1)
+
+    def _record_romance_weaving(self, person: Person, region: Region, action: str) -> None:
+        """Mnestia counts distinct mutual bonds created through care, never possession."""
+        real_burden = region.black_tide >= 25 or region.tension >= 35 or region.population > region.refuge_capacity
+        if (not self._is_romance_candidate(person) or region.status == "lost" or action not in {"aid", "organize"}
+                or self.state.year < 50 or not real_burden):
+            return
+        candidates = [
+            relation for relation in person.relations.values()
+            if relation.target_id != person.id
+            and (target := self.state.people.get(relation.target_id)) is not None
+            and target.alive and target.region_id == region.id and relation.trust >= 55
+        ]
+        if not candidates:
+            return
+        relation = max(candidates, key=lambda item: (item.trust, item.target_id))
+        weave_memory = f"mnestia_wove:{relation.target_id}"
+        if weave_memory in person.memories:
+            return
+        person.memories.append(weave_memory)
+        previous = person.trial_evidence.get("mnestia", 0)
+        person.trial_evidence["mnestia"] = min(ROMANCE_WEAVES_REQUIRED, previous + 1)
+        self._record_life_trace(person, "guardianship", responsibility=1)
+        self._credit_impact(person, 2, f"在{region.name}重新织起一段彼此承认的关系")
+        self._emit("romance_weave", f"{person.name}在{region.name}以守护而非占有，织起一段新的相互承认。", (f"person:{relation.target_id}:relation"), ("trial:mnestia:weave"), (person.id, relation.target_id))
+
     @staticmethod
     def _earth_stewardship_pressure(region: Region) -> bool:
         """A land trial begins only when the city has something real to lose."""
@@ -957,6 +1022,22 @@ class Simulation:
             person.life_stage() == "adult"
             and person.golden_status == "awakened"
             and self._matches_coreflame_factor(person, self.state.titans["georios"])
+        )
+
+    def _is_law_candidate(self, person: Person) -> bool:
+        return (
+            person.alive
+            and person.golden_status == "awakened"
+            and self._matches_coreflame_factor(person, self.state.titans["talanton"])
+            and (person.life_stage() == "adult" or "talanton_law_started" in person.memories)
+        )
+
+    def _is_romance_candidate(self, person: Person) -> bool:
+        return (
+            person.alive
+            and person.golden_status == "awakened"
+            and self._matches_coreflame_factor(person, self.state.titans["mnestia"])
+            and person.life_stage() == "adult"
         )
 
     def _record_death(self, person: Person, cause: str) -> None:
@@ -1117,8 +1198,10 @@ class Simulation:
             relation.fear = min(100, relation.fear + 4)
         elif action == "organize" and relation.trust >= 65 and relation.oath is None:
             relation.oath = "共同守望"
+            self._record_life_trace(person, "oath", responsibility=1)
             if counterpart:
                 counterpart.oath = "共同守望"
+                self._record_life_trace(target, "oath", responsibility=1)
 
     def _form_social_ties(self, person: Person) -> None:
         """Young and adult people form local ties as older networks disappear."""
@@ -1200,6 +1283,8 @@ class Simulation:
     def _resolve_coreflame_trials(self) -> None:
         """Resolve the implemented trials; a fire is never granted from a stat alone."""
         self._resolve_earth_trial()
+        self._resolve_law_trial()
+        self._resolve_romance_trial()
         self._resolve_reason_trial()
         definitions = {
             "nikador": ("纷争火种试炼", lambda r: r.tension >= 58 and r.black_tide >= 20, Factor.HUNT),
@@ -1228,6 +1313,50 @@ class Simulation:
             if titan.trial_progress < 100:
                 continue
             self._inherit_coreflame(titan, candidate, trial_name)
+
+    def _resolve_law_trial(self) -> None:
+        titan = self.state.titans["talanton"]
+        if titan.coreflame_status != "within_titan":
+            return
+        candidates = [
+            person for person in self.state.people.values()
+            if self._is_law_candidate(person)
+            and person.trial_evidence.get("talanton", 0) >= LAW_STEWARDSHIP_YEARS
+            and self.state.regions[person.region_id].status != "lost"
+        ]
+        if not candidates:
+            titan.trial_progress = max(0, titan.trial_progress - 1)
+            return
+        candidate = max(candidates, key=lambda person: (
+            person.leadership + person.insight + person.restraint + person.world_impact, person.id,
+        ))
+        titan.trial_progress = min(100, titan.trial_progress + 8)
+        self._credit_impact(candidate, 1, "推进塔兰顿的自律审判")
+        if titan.trial_progress >= 100:
+            titan.authority_state = {"bound_organization_id": candidate.organization_id or "", "rigidity": 0}
+            self._inherit_coreflame(titan, candidate, "受自身之法审判")
+
+    def _resolve_romance_trial(self) -> None:
+        titan = self.state.titans["mnestia"]
+        if titan.coreflame_status != "within_titan":
+            return
+        candidates = [
+            person for person in self.state.people.values()
+            if self._is_romance_candidate(person)
+            and person.trial_evidence.get("mnestia", 0) >= ROMANCE_WEAVES_REQUIRED
+            and self.state.regions[person.region_id].status != "lost"
+        ]
+        if not candidates:
+            titan.trial_progress = max(0, titan.trial_progress - 1)
+            return
+        candidate = max(candidates, key=lambda person: (
+            person.empathy + person.social + person.life_traces.get("guardianship", 0) + person.world_impact, person.id,
+        ))
+        titan.trial_progress = min(100, titan.trial_progress + 9)
+        self._credit_impact(candidate, 1, "推进墨涅塔的编织试炼")
+        if titan.trial_progress >= 100:
+            titan.authority_state = {"weave_count": 0, "emotional_burden": 0}
+            self._inherit_coreflame(titan, candidate, "为他人编织、而非占有")
 
     @staticmethod
     def _reason_exam_years(person: Person) -> int:
@@ -1397,6 +1526,67 @@ class Simulation:
                 and self.state.regions["okhema"].status != "lost"
                 and "georios_foundation" not in self.state.regions):
             self._found_earth_foundation(holder, titan)
+
+    def _resolve_law_authority(self) -> None:
+        """Talanton makes a city governable, while accumulated rigidity has a cost."""
+        titan = self.state.titans["talanton"]
+        if titan.coreflame_status != "held" or titan.coreflame_holder is None:
+            return
+        holder = self.state.people.get(titan.coreflame_holder)
+        if holder is None or not holder.alive:
+            return
+        region = self.state.regions.get(holder.region_id)
+        if region is not None and region.status != "lost":
+            region.order = min(100, region.order + 2)
+            region.tension = max(0, region.tension - 1)
+            rigidity = int(titan.authority_state.get("rigidity", 0)) + 1
+            titan.authority_state["rigidity"] = rigidity
+            if rigidity >= 12 and rigidity % 4 == 0:
+                region.tension = min(100, region.tension + 1)
+                self._emit("law_rigidity", f"{holder.name}维持的律法在{region.name}过于严密，秩序之外开始积累新的紧张。", ("coreflame:talanton",), (f"tension:{region.id}:+1",), (holder.id,))
+        returned_count = sum(item.coreflame_status == "returned" for item in self.state.titans.values())
+        if returned_count >= 10:
+            self._return_coreflame(titan, holder, "在诸火归还后放弃一切特权，使律法同样约束自己")
+            self._record_death(holder, "放弃律法赋予的一切例外，为共同之律献祭")
+
+    def _resolve_romance_authority(self) -> None:
+        """Mnestia reconnects isolated survivors and spends its holder's emotional strength."""
+        titan = self.state.titans["mnestia"]
+        if titan.coreflame_status != "held" or titan.coreflame_holder is None:
+            return
+        holder = self.state.people.get(titan.coreflame_holder)
+        if holder is None or not holder.alive:
+            return
+        region = self.state.regions.get(holder.region_id)
+        if region is not None and region.status != "lost":
+            residents = [person for person in self._residents(region.id) if person.id != holder.id]
+            pairs = [
+                (first, second) for index, first in enumerate(residents)
+                for second in residents[index + 1:]
+                if second.id not in first.relations
+            ]
+            if pairs:
+                first, second = min(pairs, key=lambda pair: (len(pair[0].relations) + len(pair[1].relations), pair[0].id, pair[1].id))
+                first.relations[second.id] = Relation(second.id, "相识者", 45, oath="互相扶持", last_interaction_year=self.state.year)
+                second.relations[first.id] = Relation(first.id, "相识者", 45, oath="互相扶持", last_interaction_year=self.state.year)
+                titan.authority_state["weave_count"] = int(titan.authority_state.get("weave_count", 0)) + 1
+                self._credit_impact(holder, 2, f"令{first.name}与{second.name}在{region.name}相互扶持")
+                self._emit("romance_authority_weave", f"{holder.name}令{first.name}与{second.name}在{region.name}相识并互相扶持。", ("coreflame:mnestia",), ("relation:mutual_aid:created",), (holder.id, first.id, second.id))
+            region.tension = max(0, region.tension - 1)
+            if self.state.year % 3 == 0:
+                burden = int(titan.authority_state.get("emotional_burden", 0)) + 1
+                titan.authority_state["emotional_burden"] = burden
+                self._record_life_trace(holder, "loss")
+        lost_regions = sum(item.status == "lost" for item in self.state.regions.values())
+        weave_count = int(titan.authority_state.get("weave_count", 0))
+        cherished = [relation for relation in holder.relations.values() if relation.trust >= 70]
+        if lost_regions >= 5 and weave_count >= ROMANCE_SACRIFICE_WEAVES and cherished:
+            cherished_relation = max(cherished, key=lambda relation: (relation.trust, relation.target_id))
+            counterpart = self.state.people.get(cherished_relation.target_id)
+            if counterpart is not None and holder.id in counterpart.relations:
+                counterpart.relations[holder.id].oath = "永恒纪念"
+            self._return_coreflame(titan, holder, "将最珍视的情感编入幸存者彼此相认的纽带")
+            self._record_death(holder, "将最珍视的情感织入众人的纽带，为浪漫火种献祭")
 
     def _resolve_reason_authority(self) -> None:
         """Cerces strengthens Golden Ones until the third demi-god exhausts the fire."""

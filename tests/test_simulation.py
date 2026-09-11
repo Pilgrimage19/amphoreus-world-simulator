@@ -1,6 +1,6 @@
 import unittest
 
-from amphoreus_sim.models import Crisis, EndingKind, Factor, RefugeCrisis
+from amphoreus_sim.models import Crisis, EndingKind, Factor, RefugeCrisis, Relation
 from amphoreus_sim.simulation import Simulation
 
 
@@ -611,6 +611,90 @@ class SimulationTests(unittest.TestCase):
 
         self.assertEqual(simulation.state.titans["cerces"].authority_state["created_demigod_ids"], [candidate.id])
         self.assertTrue(any(event.type == "reason_demigod_created" for event in simulation.state.events))
+
+    def test_law_trial_requires_repeated_self_bound_crisis_stewardship(self) -> None:
+        simulation = Simulation(42, population=100)
+        candidate = simulation.state.people["person-0001"]
+        candidate.age, candidate.golden_status, candidate.region_id = 25, "awakened", "janusopolis"
+        for factor in Factor:
+            candidate.factors[factor] = 20
+        candidate.factors[Factor.ORDER] = 90
+        region = simulation.state.regions["janusopolis"]
+        simulation.state.year = 50
+        candidate.life_traces["oath"] = 1
+        region.tension, region.black_tide = 50, 35
+
+        for _ in range(5):
+            simulation._record_law_stewardship(candidate, region, "organize")
+        for _ in range(13):
+            simulation._resolve_law_trial()
+
+        talanton = simulation.state.titans["talanton"]
+        self.assertEqual(candidate.trial_evidence["talanton"], 5)
+        self.assertEqual(talanton.coreflame_holder, candidate.id)
+        self.assertIn("talanton", candidate.coreflames)
+
+    def test_law_authority_stabilizes_a_region_but_accumulates_rigidity(self) -> None:
+        simulation = Simulation(42, population=100)
+        holder = simulation.state.people["person-0001"]
+        holder.region_id = "janusopolis"
+        simulation._inherit_coreflame(simulation.state.titans["talanton"], holder, "测试律法试炼")
+        region = simulation.state.regions["janusopolis"]
+        region.order, region.tension = 50, 30
+
+        simulation._resolve_law_authority()
+
+        self.assertEqual((region.order, region.tension), (52, 29))
+        self.assertEqual(simulation.state.titans["talanton"].authority_state["rigidity"], 1)
+
+    def test_romance_trial_weaves_three_distinct_mutual_bonds(self) -> None:
+        simulation = Simulation(42, population=100)
+        candidate = simulation.state.people["person-0001"]
+        candidate.age, candidate.golden_status, candidate.region_id = 25, "awakened", "okhema"
+        for factor in Factor:
+            candidate.factors[factor] = 20
+        candidate.factors[Factor.BEAUTY] = 90
+        simulation.state.year = 50
+        candidate.world_impact = 5
+        simulation.state.regions["okhema"].black_tide = 25
+        for index, target_id in enumerate(("person-0002", "person-0003", "person-0004")):
+            target = simulation.state.people[target_id]
+            target.region_id = "okhema"
+            candidate.relations[target.id] = Relation(target.id, "友人", 70)
+            target.relations[candidate.id] = Relation(candidate.id, "友人", 70)
+            simulation._record_romance_weaving(candidate, simulation.state.regions["okhema"], "aid")
+        for _ in range(12):
+            simulation._resolve_romance_trial()
+
+        mnestia = simulation.state.titans["mnestia"]
+        self.assertEqual(candidate.trial_evidence["mnestia"], 3)
+        self.assertEqual(mnestia.coreflame_holder, candidate.id)
+        self.assertIn("mnestia", candidate.coreflames)
+
+    def test_romance_authority_makes_mutual_aid_and_can_complete_sacrifice(self) -> None:
+        simulation = Simulation(42, population=100)
+        holder = simulation.state.people["person-0001"]
+        holder.region_id = "okhema"
+        beloved = simulation.state.people["person-0002"]
+        beloved.region_id = "okhema"
+        holder.relations[beloved.id] = Relation(beloved.id, "伴侣", 80)
+        beloved.relations[holder.id] = Relation(holder.id, "伴侣", 80)
+        mnestia = simulation.state.titans["mnestia"]
+        simulation._inherit_coreflame(mnestia, holder, "测试浪漫试炼")
+
+        simulation._resolve_romance_authority()
+        self.assertGreaterEqual(mnestia.authority_state["weave_count"], 1)
+        self.assertTrue(any(event.type == "romance_authority_weave" for event in simulation.state.events))
+        for region_id, region in simulation.state.regions.items():
+            if region_id not in {"okhema", "janusopolis"}:
+                region.status = "lost"
+        mnestia.authority_state["weave_count"] = 6
+
+        simulation._resolve_romance_authority()
+
+        self.assertFalse(holder.alive)
+        self.assertEqual(mnestia.coreflame_status, "returned")
+        self.assertEqual(beloved.relations[holder.id].oath, "永恒纪念")
 
     def test_earth_sacrifice_creates_a_fallible_new_city_foundation(self) -> None:
         simulation = Simulation(42, population=100)
