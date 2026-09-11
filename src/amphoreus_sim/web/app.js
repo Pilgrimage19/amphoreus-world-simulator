@@ -2,6 +2,7 @@ const byId = (id) => document.getElementById(id);
 const stageNames = {child: "儿童", youth: "青年", adult: "成人", elder: "长者"};
 const factorNames = {destruction: "毁灭", remembrance: "记忆", erudition: "智识", harmony: "同谐", elation: "欢愉", nihility: "虚无", hunt: "巡猎", beauty: "纯美", preservation: "存护", equilibrium: "均衡", order: "秩序", permanence: "不朽"};
 const regionStatusNames = {stable: "稳定", strained: "承压", overwhelmed: "避难超载", endangered: "黑潮威胁", lost: "已失陷"};
+const coreflameStatusNames = {within_titan: "火种仍在泰坦", held: "火种已被承接", returned: "火种已归还创世涡心"};
 
 function tideClass(value) {
   if (value >= 60) return "danger";
@@ -19,7 +20,7 @@ function render(state) {
   byId("metrics").innerHTML = [
     ["地区居民总数", state.population.total_civilians.toLocaleString()],
     ["独立人物样本", state.population.alive_individuals],
-    ["历史焦点", Object.keys(state.historical_focus).length],
+    ["因子行者", Object.keys(state.factor_paths || {}).length],
     ["平均黑潮", `${averageTide} / 100`],
     ["世界劫余", state.world_wear],
     ["区域数量", regions.length],
@@ -33,7 +34,7 @@ function render(state) {
     <p>${unstable ? `最需要关注的是<strong>${unstable.name}</strong>：黑潮 ${unstable.black_tide}，社会紧张 ${unstable.tension}。` : "正在等待地区数据。"}</p>
     <p>世界劫余为 ${state.world_wear}：它代表尚未再创世而累积的不可逆损伤，会在长期抬高黑潮残留源并削弱泰坦。</p>
     <p>已被承接的火种：${fires.length ? fires.map((titan) => `${titan.name}（${titan.domain}）`).join("、") : "尚无"}。</p>
-    <p>历史焦点只保留造成过世界级变化的人；普通人物仍持续生活、结社、迁徙和形成关系，但不会因重复动作霸占这个列表。</p>`;
+    <p>人物栏只显示十二因子中各自走得最远的一人；完整人物档案仍保留在世界历史中，不会因重复动作挤占观察面板。</p>`;
 
   byId("regions").innerHTML = regions.map((region) => `
     <div class="region-card">
@@ -45,21 +46,34 @@ function render(state) {
       <small>黑潮残留源 ${region.tide_source} · 防线 ${region.defense} · 伤痕 ${region.scars} · 独立人物 ${region.independent_people}</small>
     </div>`).join("");
 
-  const people = Object.values(state.historical_focus);
+  const factorPaths = Object.values(state.factor_paths || {});
+  const people = factorPaths.filter((person) => person.alive);
   byId("people").innerHTML = people.length ? people.map((person) => `
     <button class="person-card" data-person-id="${person.id}">
-      <div><strong>${person.name}</strong><span>${person.golden_status === "demigod" ? "半神" : person.golden_status === "awakened" ? "黄金裔候选" : "人物"}</span></div>
+      <div><strong>${person.name}</strong><span>${factorNames[person.path_factor]}行者 · ${person.golden_status === "demigod" ? "半神" : person.golden_status === "awakened" ? "黄金裔" : "人物"}</span></div>
       <p>${person.region_id} · ${person.age} 岁 · ${stageNames[person.life_stage]} · 主导因子：${factorNames[person.dominant_factor]}</p>
       <small>世界影响 ${person.world_impact} · 个人影响 ${person.influence} · 关系 ${person.relationship_count}</small>
     </button>`).join("") : "<p class='empty'>尚未有人留下足以进入历史焦点的影响。</p>";
 
-  byId("titans").innerHTML = Object.values(state.titans).map((titan) => `
+  byId("titans").innerHTML = Object.values(state.titans).map((titan) => {
+    const authority = titan.authority_state || {};
+    const authorityText = authority.rescue_charges !== undefined ? `门径救援额度 ${authority.rescue_charges}`
+      : authority.bonded_region_id ? `守土绑定 ${authority.bonded_region_id} · 土地负担 ${authority.land_burden || 0}`
+      : Array.isArray(authority.created_demigod_ids) ? `理性培养 ${authority.created_demigod_ids.length}/3 名半神`
+      : "尚无已实现的专属权能";
+    const flameText = titan.coreflame_status === "returned"
+      ? `${coreflameStatusNames.returned}（第 ${titan.coreflame_returned_year} 年）`
+      : titan.coreflame_holder ? `${coreflameStatusNames.held}：${titan.coreflame_holder}`
+      : coreflameStatusNames[titan.coreflame_status] || "火种状态未知";
+    return `
     <div class="titan-card">
       <strong>${titan.name}</strong><span>${titan.domain} · ${titan.group}</span>
       <small>因子 ${factorNames[titan.factor]} · 稳定 ${titan.stability} · 腐化 ${titan.corruption}</small>
       <small>${titan.trial_progress ? `试炼进度 ${titan.trial_progress}/100` : "尚未出现满足条件的试炼"}</small>
-      <em>${titan.coreflame_holder ? `火种已被承接：${titan.coreflame_holder}` : "火种仍在泰坦"}</em>
-    </div>`).join("");
+      <small>${authorityText}</small>
+      <em>${flameText}</em>
+    </div>`;
+  }).join("");
 
   byId("organizations").innerHTML = Object.values(state.organizations).map((organization) => `
     <div class="organization-card">
@@ -82,10 +96,10 @@ function render(state) {
   byId("refuge-crises").innerHTML = refugeCrises.map((crisis) => `
     <div class="event-row"><strong>${crisis.active ? "处理中" : crisis.outcome?.includes("failed") ? "已失败" : "已安置"}</strong><span>${regionNames[crisis.region_id] || crisis.region_id} · 应对 ${crisis.response_points} · 参与者 ${crisis.participant_count}<br>接纳 ${crisis.strategy_points.welcome} / 配给 ${crisis.strategy_points.ration} / 新聚居地 ${crisis.strategy_points.settle}${crisis.outcome ? ` · 结果：${refugeStrategyNames[crisis.outcome.replace("_failed", "")] || crisis.outcome}` : ""}</span></div>`).join("") || "<p class='empty'>尚未出现突破避难容量的难民潮。</p>";
 
-  const archive = Object.values(state.historical_archive);
+  const archive = factorPaths.filter((person) => !person.alive);
   byId("archive").innerHTML = archive.map((person) => `
     <button class="person-card" data-person-id="${person.id}">
-      <div><strong>${person.name}</strong><span>已故历史人物</span></div>
+      <div><strong>${person.name}</strong><span>${factorNames[person.path_factor]}行者 · 已故</span></div>
       <p>${person.region_id} · ${person.death_year ? `第 ${person.death_year} 年离世` : "离世年份不明"}</p>
       <small>世界影响 ${person.world_impact} · ${person.death_cause || "死因未记录"}</small>
     </button>`).join("") || "<p class='empty'>尚无已故的重要人物。</p>";
@@ -100,7 +114,18 @@ async function showPerson(personId) {
   const reasons = person.impact_reasons.length ? person.impact_reasons.join("；") : "尚未形成世界级影响";
   const fate = person.alive ? "仍在世" : `第 ${person.death_year} 年离世：${person.death_cause || "死因未记录"}`;
   const titanRelations = person.titan_relations.map((relation) => `${relation.name}（${relation.domain}）${relation.stance >= 0 ? "虔诚" : "反抗"} ${Math.abs(relation.stance)}`).join("、") || "尚未形成明确的泰坦关系";
-  byId("person-detail").innerHTML = `<strong>${person.name}</strong><p>${person.region_name} · ${person.age} 岁 · ${stageNames[person.life_stage]} · ${organization}</p><p>${fate}</p><p>亲属：${parents}</p><p>主导因子：${factorNames[person.dominant_factor]} · 世界影响 ${person.world_impact}</p><p>泰坦关系：${titanRelations}</p><p>影响来源：${reasons}</p><ul>${relationships}</ul>`;
+  const traits = [["勇气", person.courage], ["共情", person.empathy], ["意志", person.willpower], ["克制", person.restraint], ["野心", person.ambition], ["适应力", person.adaptability], ["责任", person.responsibility]]
+    .map(([name, value]) => `${name} ${value}`).join(" · ");
+  const traceNames = {
+    guardianship: "守护", loss: "失去", oath: "誓言", betrayal: "背叛", responsibility: "责任",
+    victory_choice: "胜利后的选择", black_tide_exposure: "黑潮侵蚀", organization_action: "重大组织行为",
+  };
+  const lifeTraces = Object.entries(person.life_traces || {}).filter(([, value]) => value > 0)
+    .map(([trace, value]) => `${traceNames[trace] || trace} ${value}`).join(" · ") || "尚未留下可追溯的人生痕迹";
+  const reasonExam = person.trial_evidence?.cerces_exam_index !== undefined
+    ? `瑟希斯四证：已通过 ${person.trial_evidence.cerces_exam_index}/4 · 当前科目累计 ${person.trial_evidence.cerces_exam_years || 0} 年`
+    : "瑟希斯四证：尚未参加";
+  byId("person-detail").innerHTML = `<strong>${person.name}</strong><p>${person.region_name} · ${person.age} 岁 · ${stageNames[person.life_stage]} · ${organization}</p><p>${fate}</p><p>亲属：${parents}</p><p>主导因子：${factorNames[person.dominant_factor]} · 世界影响 ${person.world_impact}</p><p>候选人特质：${traits}</p><p>人生痕迹：${lifeTraces}</p><p>${reasonExam}</p><p>泰坦关系：${titanRelations}</p><p>影响来源：${reasons}</p><ul>${relationships}</ul>`;
   document.querySelectorAll("[data-person-id]").forEach((card) => card.classList.toggle("selected", card.dataset.personId === personId));
 }
 

@@ -76,6 +76,13 @@ class Titan:
     corruption: int = 0
     coreflame_holder: str | None = None
     trial_progress: int = 0
+    # A fire may still rest in its Titan, be carried by a demi-god, or have
+    # been returned through a meaningful sacrifice.
+    coreflame_status: str = "within_titan"
+    coreflame_returned_year: int | None = None
+    # Titan-specific authority values remain structured and visible without
+    # making every future authority a bespoke WorldState field.
+    authority_state: dict[str, int | str | list[str]] = field(default_factory=dict)
 
     def snapshot(self) -> dict[str, object]:
         return {**asdict(self), "factor": self.factor.value}
@@ -174,6 +181,13 @@ class Person:
     insight: int
     social: int
     leadership: int
+    courage: int = 50
+    empathy: int = 50
+    willpower: int = 50
+    restraint: int = 50
+    ambition: int = 50
+    adaptability: int = 50
+    responsibility: int = 50
     family_name: str = ""
     health: int = 100
     hunger: int = 0
@@ -188,6 +202,18 @@ class Person:
     parent_ids: tuple[str, ...] = field(default_factory=tuple)
     relations: dict[str, Relation] = field(default_factory=dict)
     coreflames: list[str] = field(default_factory=list)
+    returned_coreflames: list[str] = field(default_factory=list)
+    # Lasting, cumulative evidence for future fire trials. Keys are created
+    # only when a life actually leaves that kind of mark.
+    life_traces: dict[str, int] = field(default_factory=dict)
+    # Trial evidence is earned through visible world actions, rather than
+    # being inferred from a character sheet at the moment of inheritance.
+    trial_evidence: dict[str, int] = field(default_factory=dict)
+    # Set only in the year an awakened person tried to flee a disaster zone
+    # but found no ordinary route to safety. Janus may answer that dead end.
+    gate_stranded_year: int | None = None
+    stewardship_region_id: str | None = None
+    bound_region_id: str | None = None
     # -100 means active rejection, +100 is a life-defining devotion.
     titan_stances: dict[str, int] = field(default_factory=dict)
     memories: list[str] = field(default_factory=list)

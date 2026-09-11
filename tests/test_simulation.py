@@ -42,6 +42,31 @@ class SimulationTests(unittest.TestCase):
         self.assertEqual(simulation.state.people["tribios"].organization_id, "flamechase")
         self.assertIn("tribios", simulation.state.organizations["flamechase"].member_ids)
 
+    def test_people_have_candidate_traits_and_life_traces(self) -> None:
+        simulation = Simulation(42, population=100)
+        person = simulation.state.people["person-0001"]
+        self.assertTrue(all(10 <= getattr(person, trait) <= 90 for trait in (
+            "courage", "empathy", "willpower", "restraint", "ambition", "adaptability",
+        )))
+        region = simulation.state.regions[person.region_id]
+        region.black_tide = 60
+        before = person.responsibility
+        simulation._act(person, region, "work")
+        self.assertEqual(person.life_traces["guardianship"], 1)
+        self.assertEqual(person.life_traces["responsibility"], 1)
+        self.assertEqual(person.responsibility, before + 1)
+
+    def test_responsibility_reduces_an_awakened_persons_flee_weight(self) -> None:
+        simulation = Simulation(42, population=100)
+        cautious, responsible = simulation.state.people["person-0001"], simulation.state.people["person-0002"]
+        for person in (cautious, responsible):
+            person.golden_status, person.region_id = "awakened", "skyward"
+            person.hunger, person.responsibility = 0, 20
+        responsible.responsibility = 90
+        region = simulation.state.regions["skyward"]
+        region.black_tide = 60
+        self.assertLess(simulation._action_weights(responsible, region)["flee"], simulation._action_weights(cautious, region)["flee"])
+
     def test_flamechase_can_recruit_from_the_local_population(self) -> None:
         simulation = Simulation(42, max_ticks=10, population=200)
         initial_members = len(simulation.state.organizations["flamechase"].member_ids)
@@ -98,6 +123,34 @@ class SimulationTests(unittest.TestCase):
             person["world_impact"] >= 12 or person["coreflames"] or person["golden_status"] != "ordinary"
             for person in snapshot["historical_focus"].values()
         ))
+
+    def test_golden_awakening_uses_the_calibrated_resonance_threshold(self) -> None:
+        simulation = Simulation(42, population=100)
+        person = simulation.state.people["person-0001"]
+        for factor in Factor:
+            person.factors[factor] = 20
+        person.factors[Factor.HARMONY] = 68
+        person.age, person.influence, person.resonance_years = 30, 5, 1
+
+        simulation._resolve_people()
+
+        self.assertEqual(person.golden_status, "awakened")
+
+    def test_factor_paths_show_at_most_one_meaningful_life_per_factor(self) -> None:
+        simulation = Simulation(42, population=100)
+        first = simulation.state.people["person-0001"]
+        second = simulation.state.people["person-0002"]
+        for person, score in ((first, 14), (second, 22)):
+            for factor in Factor:
+                person.factors[factor] = 20
+            person.factors[Factor.PERMANENCE] = 80
+            person.golden_status, person.world_impact = "awakened", score
+
+        paths = simulation.world_snapshot()["factor_paths"]
+
+        self.assertLessEqual(len(paths), len(Factor))
+        self.assertEqual(paths["permanence"]["id"], second.id)
+        self.assertTrue(all(path["path_factor"] == factor for factor, path in paths.items()))
 
     def test_regions_expose_tension_as_a_separate_social_pressure(self) -> None:
         snapshot = Simulation(42, population=100).world_snapshot()
@@ -159,6 +212,71 @@ class SimulationTests(unittest.TestCase):
         region.black_tide, region.population, region.collapse_years = 90, 100, 7
         simulation._resolve_region_statuses()
         self.assertEqual(region.status, "lost")
+
+    def test_lost_region_cannot_silently_recover_when_pressure_fades(self) -> None:
+        simulation = Simulation(42, population=100)
+        region = simulation.state.regions["skyward"]
+        region.status, region.population = "lost", 0
+        region.black_tide, region.collapse_years = 0, 6
+
+        for _ in range(10):
+            simulation._resolve_region_statuses()
+
+        self.assertEqual(region.status, "lost")
+        self.assertEqual(region.collapse_years, 6)
+
+    def test_small_high_tide_city_falls_from_compound_pressure(self) -> None:
+        simulation = Simulation(42, population=100)
+        region = simulation.state.regions["grove"]
+        region.black_tide = 57
+        region.population = simulation._minimum_viable_population(region) - 1
+        region.order, region.food, region.collapse_years = 0, 0, 0
+        simulation._resolve_region_statuses()
+        simulation._resolve_region_statuses()
+        self.assertEqual(region.status, "lost")
+
+    def test_small_city_without_a_high_tide_cannot_linger_indefinitely(self) -> None:
+        simulation = Simulation(42, population=100)
+        region = simulation.state.regions["grove"]
+        region.black_tide = 20
+        region.population = simulation._minimum_viable_population(region) - 1
+        region.order, region.food, region.collapse_years = 50, 500, 0
+
+        for _ in range(6):
+            simulation._resolve_region_statuses()
+
+        self.assertEqual(region.status, "lost")
+
+    def test_large_city_with_severe_tide_and_civic_failure_can_fall(self) -> None:
+        simulation = Simulation(42, population=100)
+        region = simulation.state.regions["grove"]
+        region.black_tide = 45
+        region.population = region.refuge_capacity
+        region.order, region.food, region.collapse_years = 0, 0, 0
+
+        for _ in range(3):
+            simulation._resolve_region_statuses()
+
+        self.assertEqual(region.status, "lost")
+
+    def test_two_isolated_small_refuges_accumulate_burden(self) -> None:
+        simulation = Simulation(42, population=100)
+        okhema = simulation.state.regions["okhema"]
+        grove = simulation.state.regions["grove"]
+        for region in simulation.state.regions.values():
+            if region.id not in {okhema.id, grove.id}:
+                region.status = "lost"
+        for region in (okhema, grove):
+            region.black_tide = 57
+            region.population = simulation._minimum_viable_population(region) - 1
+        okhema.defense = 10
+        simulation.state.world_wear = 400
+        old_source, old_defense = okhema.tide_source, okhema.defense
+        simulation._resolve_long_term_decline()
+        # At year 400 the pre-existing long-term erosion and the new isolated
+        # refuge burden are both due, so their tide-source pressure stacks.
+        self.assertEqual(okhema.tide_source, old_source + 2)
+        self.assertEqual(okhema.defense, old_defense - 1)
 
     def test_lost_region_becomes_remnants_not_a_normal_city(self) -> None:
         simulation = Simulation(42, population=100)
@@ -240,3 +358,287 @@ class SimulationTests(unittest.TestCase):
         simulation._maintain_representatives()
         snapshot = simulation.world_snapshot()
         self.assertLessEqual(snapshot["population"]["alive_individuals"], snapshot["population"]["total_civilians"])
+
+    def test_gate_rescues_an_awakened_candidate_stranded_on_a_broken_route(self) -> None:
+        simulation = Simulation(42, population=100)
+        candidate = simulation.state.people["person-0001"]
+        candidate.golden_status, candidate.health, candidate.region_id = "awakened", 20, "skyward"
+        candidate.gate_stranded_year = simulation.state.year
+
+        simulation._resolve_gate_authority()
+
+        janus = simulation.state.titans["janus"]
+        self.assertEqual(candidate.region_id, "okhema")
+        self.assertGreaterEqual(candidate.health, 35)
+        self.assertEqual(janus.authority_state["rescue_charges"], 4)
+        self.assertTrue(any(event.type == "gate_rescue" for event in simulation.state.events))
+
+    def test_gate_rescues_a_healthy_stranded_awakened_candidate(self) -> None:
+        simulation = Simulation(42, population=100)
+        candidate = simulation.state.people["person-0001"]
+        candidate.golden_status, candidate.health, candidate.region_id = "awakened", 100, "skyward"
+        candidate.gate_stranded_year = simulation.state.year
+
+        simulation._resolve_gate_authority()
+
+        self.assertEqual(candidate.region_id, "okhema")
+        self.assertEqual(simulation.state.titans["janus"].authority_state["rescue_charges"], 4)
+
+    def test_gate_rescue_is_not_blocked_by_okhema_macro_capacity(self) -> None:
+        simulation = Simulation(42, population=100)
+        candidate = simulation.state.people["person-0001"]
+        candidate.golden_status, candidate.region_id = "awakened", "skyward"
+        candidate.gate_stranded_year = simulation.state.year
+        okhema = simulation.state.regions["okhema"]
+        okhema.population = okhema.refuge_capacity + 1
+
+        simulation._resolve_gate_authority()
+
+        self.assertEqual(candidate.region_id, "okhema")
+        self.assertEqual(simulation.state.titans["janus"].authority_state["rescue_charges"], 4)
+
+    def test_failed_flight_marks_an_awakened_candidate_for_gate_rescue(self) -> None:
+        simulation = Simulation(42, population=100)
+        candidate = simulation.state.people["person-0001"]
+        candidate.golden_status, candidate.region_id = "awakened", "skyward"
+        skyward = simulation.state.regions["skyward"]
+        skyward.black_tide, skyward.status = 60, "endangered"
+        for neighbour_id in skyward.neighbours:
+            neighbour = simulation.state.regions[neighbour_id]
+            neighbour.status = "lost"
+
+        simulation._act(candidate, skyward, "flee")
+
+        self.assertEqual(candidate.region_id, "skyward")
+        self.assertEqual(candidate.gate_stranded_year, simulation.state.year)
+
+    def test_people_do_not_flee_before_the_shared_evacuation_threshold(self) -> None:
+        simulation = Simulation(42, population=100)
+        candidate = simulation.state.people["person-0001"]
+        candidate.region_id = "skyward"
+        skyward = simulation.state.regions["skyward"]
+        skyward.black_tide = 49
+        destination = simulation.state.regions[skyward.neighbours[0]]
+        destination.status, destination.black_tide = "stable", 0
+        destination.population = 0
+
+        simulation._act(candidate, skyward, "flee")
+
+        self.assertEqual(candidate.region_id, "skyward")
+
+    def test_a_lost_city_without_an_exit_marks_an_awakened_candidate_for_gate_rescue(self) -> None:
+        simulation = Simulation(42, population=100)
+        candidate = simulation.state.people["person-0001"]
+        candidate.golden_status, candidate.region_id = "awakened", "skyward"
+        skyward = simulation.state.regions["skyward"]
+        skyward.status = "lost"
+        for neighbour_id in skyward.neighbours:
+            simulation.state.regions[neighbour_id].status = "lost"
+
+        simulation._resolve_lost_person(candidate, skyward)
+
+        self.assertEqual(candidate.gate_stranded_year, simulation.state.year)
+
+    def test_gate_does_not_spend_a_charge_on_a_demigod(self) -> None:
+        simulation = Simulation(42, population=100)
+        tribios = simulation.state.people["tribios"]
+        tribios.health, tribios.region_id = 1, "skyward"
+        tribios.gate_stranded_year = simulation.state.year
+
+        simulation._resolve_gate_authority()
+
+        self.assertEqual(tribios.region_id, "skyward")
+        self.assertEqual(simulation.state.titans["janus"].authority_state["rescue_charges"], 5)
+
+    def test_gate_returns_its_fire_after_the_last_rescue(self) -> None:
+        simulation = Simulation(42, population=100)
+        candidate = simulation.state.people["person-0001"]
+        candidate.golden_status, candidate.health, candidate.region_id = "awakened", 20, "skyward"
+        candidate.gate_stranded_year = simulation.state.year
+        janus = simulation.state.titans["janus"]
+        janus.authority_state["rescue_charges"] = 1
+
+        simulation._resolve_gate_authority()
+
+        tribios = simulation.state.people["tribios"]
+        self.assertFalse(tribios.alive)
+        self.assertIsNone(janus.coreflame_holder)
+        self.assertEqual(janus.coreflame_status, "returned")
+        self.assertEqual(janus.coreflame_returned_year, simulation.state.year)
+        self.assertNotIn("janus", tribios.coreflames)
+
+    def test_earth_trial_requires_stewardship_and_binds_the_holder_to_land(self) -> None:
+        simulation = Simulation(42, population=100)
+        candidate = simulation.state.people["person-0001"]
+        candidate.region_id, candidate.golden_status = "okhema", "awakened"
+        candidate.factors[Factor.PERMANENCE], candidate.body = 90, 80
+        candidate.titan_stances["georios"] = 55
+        candidate.trial_evidence["georios"] = 5
+        candidate.stewardship_region_id = "okhema"
+
+        for _ in range(20):
+            simulation._resolve_earth_trial()
+            if simulation.state.titans["georios"].coreflame_holder:
+                break
+
+        georios = simulation.state.titans["georios"]
+        self.assertEqual(georios.coreflame_holder, candidate.id)
+        self.assertEqual(georios.coreflame_status, "held")
+        self.assertEqual(candidate.bound_region_id, "okhema")
+        self.assertIn("georios", candidate.coreflames)
+
+    def test_earth_trial_rejects_a_golden_whose_highest_factor_is_not_permanence(self) -> None:
+        simulation = Simulation(42, population=100)
+        for person in simulation.state.people.values():
+            person.golden_status = "ordinary"
+        candidate = simulation.state.people["person-0001"]
+        candidate.region_id, candidate.golden_status = "okhema", "awakened"
+        candidate.factors[Factor.PERMANENCE], candidate.factors[Factor.HARMONY] = 90, 95
+        candidate.body, candidate.titan_stances["georios"] = 80, 55
+        candidate.trial_evidence["georios"], candidate.stewardship_region_id = 5, "okhema"
+
+        for _ in range(20):
+            simulation._resolve_earth_trial()
+
+        self.assertIsNone(simulation.state.titans["georios"].coreflame_holder)
+
+    def test_every_adult_permanence_golden_can_begin_earth_stewardship(self) -> None:
+        simulation = Simulation(42, population=100)
+        candidate = simulation.state.people["person-0001"]
+        candidate.age, candidate.golden_status = 25, "awakened"
+        candidate.body, candidate.titan_stances["georios"] = 20, 0
+        for factor in Factor:
+            candidate.factors[factor] = 20
+        candidate.factors[Factor.PERMANENCE] = 68
+
+        self.assertTrue(simulation._is_earth_candidate(candidate))
+
+    def test_earth_stewardship_requires_a_real_local_burden(self) -> None:
+        simulation = Simulation(42, population=100)
+        candidate = simulation.state.people["person-0001"]
+        candidate.age, candidate.golden_status = 25, "awakened"
+        for factor in Factor:
+            candidate.factors[factor] = 20
+        candidate.factors[Factor.PERMANENCE] = 68
+        region = simulation.state.regions[candidate.region_id]
+        region.black_tide, region.tension = 0, 0
+
+        simulation._record_earth_stewardship(candidate, region, "work")
+
+        self.assertNotIn("georios", candidate.trial_evidence)
+        region.black_tide = 50
+        simulation._record_earth_stewardship(candidate, region, "work")
+        self.assertEqual(candidate.trial_evidence["georios"], 1)
+
+    def test_earth_candidate_stays_to_work_instead_of_fleeing(self) -> None:
+        simulation = Simulation(42, population=100)
+        candidate = simulation.state.people["person-0001"]
+        candidate.region_id, candidate.golden_status = "skyward", "awakened"
+        for factor in Factor:
+            candidate.factors[factor] = 20
+        candidate.factors[Factor.PERMANENCE] = 90
+        candidate.body, candidate.titan_stances["georios"] = 80, 55
+        skyward = simulation.state.regions["skyward"]
+        skyward.black_tide = 60
+        before_food = skyward.food
+
+        simulation._act(candidate, skyward, "flee")
+
+        self.assertEqual(candidate.region_id, "skyward")
+        self.assertGreater(skyward.food, before_food)
+
+    def test_earth_authority_restores_its_bonded_region(self) -> None:
+        simulation = Simulation(42, population=100)
+        candidate = simulation.state.people["person-0001"]
+        candidate.region_id, candidate.bound_region_id = "okhema", "okhema"
+        simulation._inherit_coreflame(simulation.state.titans["georios"], candidate, "测试守土试炼")
+        region = simulation.state.regions["okhema"]
+        region.food, region.defense, region.black_tide, region.tide_source, region.scars = 0, 4, 40, 10, 2
+
+        simulation._resolve_earth_authority()
+
+        self.assertGreater(region.food, 0)
+        self.assertEqual(region.defense, 5)
+        self.assertEqual(region.black_tide, 39)
+        self.assertEqual(region.scars, 1)
+
+    def test_reason_exam_speed_uses_a_five_to_twenty_year_exponential_curve(self) -> None:
+        simulation = Simulation(42, population=100)
+        candidate = simulation.state.people["person-0001"]
+        candidate.factors[Factor.ERUDITION], candidate.insight = 100, 100
+        self.assertEqual(simulation._reason_exam_years(candidate), 5)
+
+        candidate.factors[Factor.ERUDITION], candidate.insight = 40, 40
+        self.assertEqual(simulation._reason_exam_years(candidate), 20)
+
+    def test_reason_candidate_completes_the_four_examinations_without_random_failure(self) -> None:
+        simulation = Simulation(42, population=100)
+        candidate = simulation.state.people["person-0001"]
+        candidate.age, candidate.golden_status = 25, "awakened"
+        for factor in Factor:
+            candidate.factors[factor] = 20
+        candidate.factors[Factor.ERUDITION], candidate.insight = 100, 100
+
+        for year in range(1, 21):
+            simulation.state.year = year
+            simulation._resolve_reason_trial()
+
+        cerces = simulation.state.titans["cerces"]
+        self.assertEqual(cerces.coreflame_holder, candidate.id)
+        self.assertEqual(candidate.trial_evidence["cerces_exam_index"], 4)
+
+    def test_reason_holder_dies_and_returns_the_fire_after_three_guided_demigods(self) -> None:
+        simulation = Simulation(42, population=100)
+        holder = simulation.state.people["person-0004"]
+        cerces = simulation.state.titans["cerces"]
+        simulation._inherit_coreflame(cerces, holder, "测试瑟希斯四证")
+        cerces.authority_state["created_demigod_ids"] = ["person-0001", "person-0002", "person-0003"]
+
+        simulation._resolve_reason_authority()
+
+        self.assertFalse(holder.alive)
+        self.assertEqual(cerces.coreflame_status, "returned")
+        self.assertEqual(len(cerces.authority_state["created_demigod_ids"]), 3)
+
+    def test_reason_authority_records_a_golden_becoming_a_demigod(self) -> None:
+        simulation = Simulation(42, population=100)
+        holder = simulation.state.people["person-0004"]
+        simulation._inherit_coreflame(simulation.state.titans["cerces"], holder, "测试瑟希斯四证")
+        candidate = simulation.state.people["person-0001"]
+        candidate.golden_status = "awakened"
+
+        simulation._inherit_coreflame(simulation.state.titans["georios"], candidate, "测试守土试炼")
+
+        self.assertEqual(simulation.state.titans["cerces"].authority_state["created_demigod_ids"], [candidate.id])
+        self.assertTrue(any(event.type == "reason_demigod_created" for event in simulation.state.events))
+
+    def test_earth_sacrifice_creates_a_fallible_new_city_foundation(self) -> None:
+        simulation = Simulation(42, population=100)
+        candidate = simulation.state.people["person-0001"]
+        candidate.region_id, candidate.bound_region_id = "okhema", "okhema"
+        georios = simulation.state.titans["georios"]
+        simulation._inherit_coreflame(georios, candidate, "测试守土试炼")
+        for region_id, region in simulation.state.regions.items():
+            if region_id not in {"okhema", "janusopolis"}:
+                region.status = "lost"
+
+        simulation._resolve_earth_authority()
+        self.assertNotIn("georios_foundation", simulation.state.regions)
+
+        simulation.state.year += 5
+        okhema_population = simulation.state.regions["okhema"].population
+        simulation._resolve_earth_authority()
+
+        foundation = simulation.state.regions["georios_foundation"]
+        self.assertEqual(foundation.name, "磐生城")
+        self.assertEqual(foundation.refuge_capacity, 8000)
+        self.assertGreater(foundation.population, 0)
+        self.assertLess(simulation.state.regions["okhema"].population, okhema_population)
+        self.assertTrue(simulation._residents("georios_foundation"))
+        self.assertIn("georios_foundation", simulation.state.regions["okhema"].neighbours)
+        self.assertFalse(candidate.alive)
+        self.assertEqual(georios.coreflame_status, "returned")
+        self.assertTrue(any(event.type == "earth_foundation" for event in simulation.state.events))
+
+        simulation.step()
+        self.assertIn("georios_foundation", simulation.state.regions)

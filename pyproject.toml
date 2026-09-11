@@ -8,9 +8,11 @@ version = "0.1.0"
 description = "Deterministic prototype for a mythic civilization and cycle simulation."
 requires-python = ">=3.12"
 
+[project.scripts]
+amphoreus-audit = "amphoreus_sim.audit:main"
+
 [tool.setuptools]
 package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
-

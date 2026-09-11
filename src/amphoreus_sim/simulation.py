@@ -18,6 +18,16 @@ FACTOR_NAMES = {
 }
 
 HISTORICAL_IMPACT_THRESHOLD = 12
+GOLDEN_RESONANCE_THRESHOLD = 68
+GOLDEN_RESONANCE_YEARS = 2
+GOLDEN_INFLUENCE_THRESHOLD = 5
+EVACUATION_TIDE_THRESHOLD = 50
+GATE_RESCUE_CHARGES = 5
+EARTH_STEWARDSHIP_YEARS = 5
+EARTH_MIN_HOLDING_YEARS = 5
+EARTH_FOUNDATION_CAPACITY = 8_000
+REASON_EXAMS = ("辨真", "演绎", "衡世", "择未来")
+REASON_GOLDEN_QUOTA = 3
 
 TITAN_DATA = (
     ("aquila", "艾格勒", "天空", Factor.PRESERVATION, "支柱", "skyward"),
@@ -123,6 +133,8 @@ class Simulation:
         tribios.memories.append("在黑潮降临时夺取门径火种")
         tribios.titan_stances.update({"janus": 96, "oronyx": 48, "talanton": 36})
         titans["janus"].coreflame_holder, titans["janus"].stability = "tribios", 38
+        titans["janus"].coreflame_status = "held"
+        titans["janus"].authority_state = {"rescue_charges": GATE_RESCUE_CHARGES, "inherited_year": 0}
         organizations = self._create_organizations(people)
         return WorldState(0, regions, titans, people, organizations)
 
@@ -137,15 +149,22 @@ class Simulation:
             given_name, family_name = self._person_name(region_id, ident)
             people[ident] = Person(ident, f"{given_name}·{family_name}", region_id,
                                    rng.randint(12, 68), factors, rng.randint(25, 75), rng.randint(25, 75),
-                                   rng.randint(25, 75), rng.randint(20, 70), family_name=family_name)
+                                   rng.randint(25, 75), rng.randint(20, 70),
+                                   courage=rng.randint(25, 75), empathy=rng.randint(25, 75),
+                                   willpower=rng.randint(25, 75), restraint=rng.randint(25, 75),
+                                   ambition=rng.randint(25, 75), adaptability=rng.randint(25, 75),
+                                   responsibility=rng.randint(25, 75),
+                                   family_name=family_name)
         anchor = people.pop("person-0000")
         factors = dict(anchor.factors)
         factors[Factor.HARMONY], factors[Factor.REMEMBRANCE] = 96, max(78, factors[Factor.REMEMBRANCE])
-        people["tribios"] = Person("tribios", "缇里西庇俄丝", "janusopolis", 24, factors, 46, 82, 91, 78)
+        people["tribios"] = Person("tribios", "缇里西庇俄丝", "janusopolis", 24, factors, 46, 82, 91, 78,
+                                    courage=80, empathy=88, willpower=86, restraint=70, ambition=72, adaptability=84,
+                                    responsibility=86)
         return people
 
     def _person_name(self, region_id: str, person_id: str) -> tuple[str, str]:
-        given_names, family_names = NAME_DATA[region_id]
+        given_names, family_names = NAME_DATA.get(region_id, NAME_DATA["okhema"])
         rng = self.random.get(f"name:{person_id}")
         return rng.choice(given_names), rng.choice(family_names)
 
@@ -220,9 +239,12 @@ class Simulation:
         self._resolve_titans()
         self._resolve_faiths()
         self._resolve_people()
+        self._resolve_gate_authority()
         self._maintain_representatives()
         self._resolve_organizations()
         self._resolve_coreflame_trials()
+        self._resolve_earth_authority()
+        self._resolve_reason_authority()
         self._update_historical_focus()
         self._emit_world_status()
         return self._check_ending()
@@ -284,8 +306,12 @@ class Simulation:
                 region.tension = min(100, region.tension + 1 + region.black_tide // 45)
             elif region.tension > 8:
                 region.tension -= 1
-            births = int(region.population * (0.0105 + region.order / 100000))
-            deaths = int(region.population * (0.010 + region.black_tide / 10000))
+            birth_rate = 0.0105 + region.order / 100000
+            if region.black_tide > 45:
+                birth_rate *= max(0, 1 - (region.black_tide - 45) / 35)
+            death_rate = 0.010 + max(0, region.black_tide - 40) ** 2 / 20_000
+            births = int(region.population * birth_rate)
+            deaths = int(region.population * death_rate)
             region.population = max(0, region.population + births - deaths)
         next_tide = {}
         for region in self.state.regions.values():
@@ -372,6 +398,22 @@ class Simulation:
                 titan.corruption = min(100, titan.corruption + 1)
                 titan.stability = max(0, titan.stability - 1)
         lost_regions = sum(region.status == "lost" for region in self.state.regions.values())
+        if lost_regions >= len(self.state.regions) - 2:
+            # Two isolated, undersized refuges cannot indefinitely sustain each
+            # other. Their watchtowers thin out and the Black Tide finds new
+            # seams in the remaining civic fabric.
+            for index, region in enumerate(self.state.regions.values()):
+                if (
+                    region.status == "lost"
+                    or region.black_tide < 50
+                    or region.population > self._minimum_viable_population(region)
+                    or (wear + index) % 2 != 0
+                ):
+                    continue
+                region.tide_source = min(85, region.tide_source + 1)
+                region.defense = max(0, region.defense - 1)
+                if (wear + index) % 10 == 0:
+                    self._emit("isolated_refuge_burden", f"{region.name}与另一座孤城相互隔绝，守备难以轮替；黑潮残留源继续渗入。", (f"lost_regions:{lost_regions}", f"population:{region.id}:{region.population}"), (f"tide_source:{region.id}:+1", f"defense:{region.id}:-1"))
         if wear >= 300 and lost_regions >= len(self.state.regions) - 1:
             # A final refuge is not magically safe. It inherits displaced
             # people, broken routes, memories and pressure from the whole
@@ -438,19 +480,16 @@ class Simulation:
 
     def _resolve_population_migration(self) -> None:
         for region in self.state.regions.values():
-            if not region.neighbours or region.black_tide < 25 or region.population <= 0:
+            if not region.neighbours or region.black_tide < EVACUATION_TIDE_THRESHOLD or region.population <= 0:
                 continue
-            viable = [self.state.regions[key] for key in region.neighbours
-                      if self.state.regions[key].population < self.state.regions[key].refuge_capacity]
+            viable = self._safe_refuges(region)
             if not viable:
                 continue
             destination = min(viable, key=lambda candidate: (candidate.black_tide, candidate.population / max(1, candidate.refuge_capacity), candidate.id))
             destination_id = destination.id
-            difference = region.black_tide - destination.black_tide
-            if difference < 12:
-                continue
-            free_space = max(0, destination.refuge_capacity - destination.population)
-            migrants = min(free_space, region.population // 20, max(20, region.population * difference // 2000))
+            safe_space = max(0, destination.refuge_capacity * 9 // 10 - destination.population)
+            pressure = max(12, region.black_tide - destination.black_tide)
+            migrants = min(safe_space, region.population // 20, max(20, region.population * pressure // 2000))
             if migrants <= 0:
                 continue
             region.population -= migrants
@@ -459,9 +498,28 @@ class Simulation:
                 region.last_migration_report_year = self.state.year
                 self._emit("population_migration", f"约{migrants}名居民逃离{region.name}，迁往{destination.name}。", (f"black_tide:{region.id}",), (f"population:{region.id}:-{migrants}", f"population:{destination.id}:+{migrants}"))
 
+    @staticmethod
+    def _minimum_viable_population(region: Region) -> int:
+        """Population below which a refuge no longer has a viable civic scale."""
+        return max(100, region.refuge_capacity // 100)
+
+    def _safe_refuges(self, region: Region) -> list[Region]:
+        """Return destinations shared by civilian, personal and remnant flight."""
+        return [
+            self.state.regions[region_id] for region_id in region.neighbours
+            if self.state.regions[region_id].status != "lost"
+            and self.state.regions[region_id].black_tide < EVACUATION_TIDE_THRESHOLD
+            and self.state.regions[region_id].population < self.state.regions[region_id].refuge_capacity * 9 // 10
+        ]
+
     def _resolve_region_statuses(self) -> None:
         """Give a city a fate beyond its current population counter."""
         for region in self.state.regions.values():
+            # Loss is a terminal world state. A quiet year or zero remaining
+            # population cannot silently turn ruins back into a functioning
+            # city; revival requires a future explicit reconstruction event.
+            if region.status == "lost":
+                continue
             other_lost = sum(other.status == "lost" for other in self.state.regions.values() if other.id != region.id)
             last_refuge_tide_threshold = 75 if self.state.world_wear < 500 else 65
             last_refuge_failing = (
@@ -470,14 +528,40 @@ class Simulation:
                 and region.black_tide >= last_refuge_tide_threshold
                 and region.population <= max(100, region.refuge_capacity // 8)
             )
-            if (region.black_tide >= 85 or last_refuge_failing) and region.population <= max(100, region.refuge_capacity // 8):
+            catastrophic_tide = (
+                region.black_tide >= 85 or last_refuge_failing
+            ) and region.population <= max(100, region.refuge_capacity // 8)
+            fragile_city = (
+                region.black_tide >= 50
+                and region.population <= self._minimum_viable_population(region)
+            )
+            # A city reduced below its civic minimum cannot remain a city just
+            # because its tide happens to be below the evacuation threshold.
+            # At this scale births round to zero while institutions, food
+            # stores and defenses still require a functioning population.
+            sparse_city = (
+                0 < region.population <= self._minimum_viable_population(region)
+                and not fragile_city
+            )
+            social_failure = region.order <= 15 or region.food < max(1, region.population // 6)
+            # A populous city is not safe merely because many people are
+            # trapped inside it. Once a severe tide has also broken food or
+            # civic order, it accumulates collapse pressure as a failed city.
+            civic_collapse = region.black_tide >= 40 and social_failure
+            if catastrophic_tide:
                 region.collapse_years += 1
+            elif fragile_city:
+                region.collapse_years += 2 + int(social_failure)
+            elif civic_collapse:
+                region.collapse_years += 1 + int(region.black_tide >= 45)
+            elif sparse_city:
+                region.collapse_years += 1 + int(social_failure)
             else:
                 region.collapse_years = max(0, region.collapse_years - 1)
             previous = region.status
-            if region.collapse_years >= 8:
+            if region.collapse_years >= 6:
                 region.status = "lost"
-            elif region.black_tide >= 50:
+            elif region.black_tide >= 50 or civic_collapse:
                 region.status = "endangered"
             elif region.population > region.refuge_capacity:
                 region.status = "overwhelmed"
@@ -609,6 +693,8 @@ class Simulation:
             # Low and medium contamination damages society first. Direct yearly
             # mortality begins only once a region is deeply lost to the tide.
             person.health -= max(0, (region.black_tide - 50) // 10) + person.hunger // 35
+            if region.black_tide >= 25:
+                self._record_life_trace(person, "black_tide_exposure")
             if region.black_tide < 25 and person.hunger < 20:
                 person.health = min(100, person.health + 1)
             if person.health <= 0 and self._is_demigod(person):
@@ -628,14 +714,17 @@ class Simulation:
                 continue
             action = self._choose_action(person, region)
             event = self._act(person, region, action)
+            self._record_earth_stewardship(person, region, action)
             self._resolve_relationships(person, action)
             self._form_social_ties(person)
             if event and notable < 12:
                 self._emit(*event)
                 notable += 1
             peak = person.factors[person.dominant_factor()]
-            person.resonance_years = person.resonance_years + 1 if peak >= 82 else max(0, person.resonance_years - 1)
-            if person.life_stage() == "adult" and person.golden_status == "ordinary" and person.resonance_years >= 5 and person.influence >= 12:
+            person.resonance_years = person.resonance_years + 1 if peak >= GOLDEN_RESONANCE_THRESHOLD else max(0, person.resonance_years - 1)
+            if (person.life_stage() == "adult" and person.golden_status == "ordinary"
+                    and person.resonance_years >= GOLDEN_RESONANCE_YEARS
+                    and person.influence >= GOLDEN_INFLUENCE_THRESHOLD):
                 person.golden_status = "awakened"
                 self._emit("golden_awakening", f"{person.name}在{FACTOR_NAMES[person.dominant_factor()]}上形成稳定共鸣，成为黄金裔候选。", (f"factor:{person.dominant_factor().value}",), (f"person:{person.id}:awakened",), (person.id,))
         self._resolve_births()
@@ -667,6 +756,13 @@ class Simulation:
                 child = Person(
                     ident, f"{given_name}·{family_name}", region.id, 0, factors,
                     rng.randint(20, 50), rng.randint(20, 50), rng.randint(20, 50), rng.randint(15, 40),
+                    courage=self._inherited_trait(parent_a.courage, parent_b.courage, rng),
+                    empathy=self._inherited_trait(parent_a.empathy, parent_b.empathy, rng),
+                    willpower=self._inherited_trait(parent_a.willpower, parent_b.willpower, rng),
+                    restraint=self._inherited_trait(parent_a.restraint, parent_b.restraint, rng),
+                    ambition=self._inherited_trait(parent_a.ambition, parent_b.ambition, rng),
+                    adaptability=self._inherited_trait(parent_a.adaptability, parent_b.adaptability, rng),
+                    responsibility=self._inherited_trait(parent_a.responsibility, parent_b.responsibility, rng),
                     family_name=family_name, parent_ids=(parent_a.id, parent_b.id),
                 )
                 self.state.people[ident] = child
@@ -704,34 +800,63 @@ class Simulation:
                 child.relations[guardian.id] = Relation(guardian.id, "家族友人", relation.trust // 2, last_interaction_year=self.state.year)
                 guardian.relations.setdefault(child.id, Relation(child.id, "家族友人", relation.trust // 2, last_interaction_year=self.state.year))
 
-    def _choose_action(self, person: Person, region: Region) -> str:
+    @staticmethod
+    def _inherited_trait(first: int, second: int, rng) -> int:
+        return max(10, min(90, (first + second) // 2 + rng.randint(-10, 10)))
+
+    def _action_weights(self, person: Person, region: Region) -> dict[str, int]:
         f = person.factors
-        weights = {
-            "work": 25 + person.body // 3 + person.hunger,
-            "aid": 4 + f[Factor.HARMONY] + f[Factor.PRESERVATION] + region.black_tide,
-            "organize": 3 + person.leadership + f[Factor.ORDER] + f[Factor.HARMONY],
+        flee_weight = 0 if region.black_tide < EVACUATION_TIDE_THRESHOLD else 2 + region.black_tide * 2 + person.hunger
+        if person.golden_status == "awakened":
+            # Responsibility does not forbid escape, but makes an awakened
+            # person more likely to stay and answer the danger around them.
+            flee_weight = max(1, flee_weight * max(20, 120 - person.responsibility) // 100)
+        weights: dict[str, int] = {
+            "work": 25 + person.body // 3 + person.hunger + person.willpower // 4 + person.responsibility // 3,
+            "aid": 4 + f[Factor.HARMONY] + f[Factor.PRESERVATION] + region.black_tide + person.empathy // 2 + person.responsibility // 3,
+            "organize": 3 + person.leadership + f[Factor.ORDER] + f[Factor.HARMONY] + person.restraint // 3 + person.responsibility // 2,
             "study": 3 + person.insight + f[Factor.ERUDITION] + f[Factor.REMEMBRANCE] + region.knowledge,
-            "seek": 1 + max(0, f[person.dominant_factor()] - 65) * 2 + person.resonance_years * 4,
-            "flee": 2 + region.black_tide * 2 + person.hunger,
-            "conflict": max(1, 2 + f[Factor.HUNT] + f[Factor.DESTRUCTION] - f[Factor.HARMONY]),
+            "seek": 1 + max(0, f[person.dominant_factor()] - 65) * 2 + person.resonance_years * 4 + person.ambition // 3,
+            "flee": flee_weight,
+            "conflict": max(1, 2 + f[Factor.HUNT] + f[Factor.DESTRUCTION] + person.courage // 3 + person.ambition // 4 - f[Factor.HARMONY] - person.restraint // 3),
         }
         if person.golden_status == "demigod":
             weights["organize"] += 50
             weights["aid"] += 30
+        elif self._is_earth_candidate(person) and self._earth_stewardship_pressure(region):
+            # Georios calls a candidate to visible, repeated care only once
+            # their own city faces a real civic burden. Daily work in a safe
+            # city is not a fire trial.
+            weights["work"] += 35
+            weights["aid"] += 12
+            weights["organize"] += 8
         if person.life_stage() == "youth":
             weights["study"] += 50
             weights["work"] = max(1, weights["work"] // 3)
             weights["conflict"] = max(1, weights["conflict"] // 4)
+        return weights
+
+    def _choose_action(self, person: Person, region: Region) -> str:
+        weights = self._action_weights(person, region)
         names = tuple(weights)
         return self.random.get(f"decision:{person.id}").choices(names, weights=tuple(weights[name] for name in names))[0]
 
     def _act(self, person: Person, region: Region, action: str):
+        # A potential bearer of the Earth flame does not abandon a land that
+        # still stands. Choosing to remain turns an attempted flight into the
+        # practical work through which stewardship can be proven.
+        if action == "flee" and self._is_earth_candidate(person) and region.status != "lost":
+            action = "work"
         if action == "work":
             region.food += 1 + person.body // 45
+            if region.black_tide >= 25:
+                self._record_life_trace(person, "guardianship", responsibility=1)
             if region.population > region.refuge_capacity and person.body >= 55:
                 self._support_refuge_crisis(person, region, 1, "参与搭建难民安置设施")
         elif action == "aid":
             person.influence += 1
+            if region.black_tide >= 25:
+                self._record_life_trace(person, "guardianship", responsibility=1)
             if region.black_tide >= 30 and person.social >= 65:
                 region.tension = max(0, region.tension - 1)
                 self._credit_impact(person, 1, "在黑潮压力下组织了救援")
@@ -743,6 +868,8 @@ class Simulation:
                 return ("flamechase_preached", "缇里西庇俄丝以门径火种为证，向难民宣讲逐火的可能。", ("coreflame:janus",), ("idea:flame_chase:spread",), ("tribios",))
         elif action == "organize":
             person.influence += 1
+            if region.black_tide >= 25:
+                self._record_life_trace(person, "organization_action", responsibility=1)
             if person.leadership >= 70 and region.tension >= 45:
                 region.tension = max(0, region.tension - 1)
                 self._credit_impact(person, 1, "缓和了地区的派系紧张")
@@ -758,14 +885,15 @@ class Simulation:
                 self._support_refuge_crisis(person, region, 2, "规划新的聚居地与供给路线")
         elif action == "seek":
             person.influence += 1
-        elif action == "flee" and region.neighbours:
-            destinations = [self.state.regions[key] for key in region.neighbours
-                            if self.state.regions[key].population < self.state.regions[key].refuge_capacity]
+        elif action == "flee" and region.black_tide >= EVACUATION_TIDE_THRESHOLD:
+            destinations = self._safe_refuges(region)
             if destinations:
                 destination = min(destinations, key=lambda item: (item.black_tide, item.population / max(1, item.refuge_capacity)))
-                if destination.black_tide < region.black_tide:
-                    person.region_id = destination.id
+                person.region_id = destination.id
+            elif person.golden_status == "awakened":
+                person.gate_stranded_year = self.state.year
         elif action == "conflict":
+            self._record_life_trace(person, "betrayal")
             # Most conflicts remain within a person's small social horizon.
             # Only a rare, capable agitator alters a whole region this year.
             person.influence += 1
@@ -775,6 +903,13 @@ class Simulation:
                 self._credit_impact(person, 2, "煽动的冲突升级为地区危机")
         return None
 
+    @staticmethod
+    def _record_life_trace(person: Person, trace: str, responsibility: int = 0) -> None:
+        person.life_traces[trace] = person.life_traces.get(trace, 0) + 1
+        if responsibility:
+            person.life_traces["responsibility"] = person.life_traces.get("responsibility", 0) + responsibility
+            person.responsibility = min(100, person.responsibility + responsibility)
+
     def _credit_impact(self, person: Person, amount: int, reason: str) -> None:
         """Record causal world impact separately from repeated private actions."""
         person.world_impact += amount
@@ -782,9 +917,47 @@ class Simulation:
             person.impact_reasons.append(reason)
             person.impact_reasons[:] = person.impact_reasons[-5:]
 
+    def _record_earth_stewardship(self, person: Person, region: Region, action: str) -> None:
+        """Turn repeated, local care during hardship into evidence for Georios."""
+        if (not self._is_earth_candidate(person)
+                or region.status == "lost" or not self._earth_stewardship_pressure(region)
+                or action not in {"work", "aid", "organize"}):
+            return
+        if person.stewardship_region_id not in {None, region.id}:
+            person.trial_evidence["georios"] = 0
+        person.stewardship_region_id = region.id
+        previous_evidence = person.trial_evidence.get("georios", 0)
+        evidence = min(EARTH_STEWARDSHIP_YEARS, previous_evidence + 1)
+        person.trial_evidence["georios"] = evidence
+        self._credit_impact(person, 1, f"在{region.name}守土并修复土地")
+        if previous_evidence < EARTH_STEWARDSHIP_YEARS == evidence:
+            self._emit("earth_trial_ready", f"{person.name}在{region.name}持续守土，吉奥里亚的试炼开始回应。", (f"person:{person.id}:stewardship"), ("trial:georios:ready",), (person.id,))
+
+    @staticmethod
+    def _earth_stewardship_pressure(region: Region) -> bool:
+        """A land trial begins only when the city has something real to lose."""
+        return (
+            region.black_tide >= 50
+            or (region.black_tide >= 35 and region.tension >= 50)
+            or region.population > region.refuge_capacity
+        )
+
     @staticmethod
     def _is_demigod(person: Person) -> bool:
         return person.golden_status == "demigod" or bool(person.coreflames)
+
+    @staticmethod
+    def _matches_coreflame_factor(person: Person, titan: Titan) -> bool:
+        """A golden's single possible flame is fixed by their highest factor."""
+        return person.dominant_factor() == titan.factor
+
+    def _is_earth_candidate(self, person: Person) -> bool:
+        """Every adult Permanence golden can begin Georios's stewardship path."""
+        return (
+            person.life_stage() == "adult"
+            and person.golden_status == "awakened"
+            and self._matches_coreflame_factor(person, self.state.titans["georios"])
+        )
 
     def _record_death(self, person: Person, cause: str) -> None:
         """Death remains in the world as history, rather than deleting a person."""
@@ -1025,9 +1198,10 @@ class Simulation:
                     self._emit("flamechase_recruitment", f"{recruit.name}响应缇里西庇俄丝的逐火宣讲，加入逐火传播团。", ("idea:flame_chase",), (f"organization:{organization.id}:+1",), ("tribios", recruit.id))
 
     def _resolve_coreflame_trials(self) -> None:
-        """First emergent trials. A fire is never granted from a stat alone."""
+        """Resolve the implemented trials; a fire is never granted from a stat alone."""
+        self._resolve_earth_trial()
+        self._resolve_reason_trial()
         definitions = {
-            "cerces": ("理性火种试炼", lambda r: r.knowledge >= 72 and r.tension >= 28, Factor.ERUDITION),
             "nikador": ("纷争火种试炼", lambda r: r.tension >= 58 and r.black_tide >= 20, Factor.HUNT),
             "thanatos": ("死亡火种试炼", lambda r: r.black_tide >= 48 and r.population > 0, Factor.EQUILIBRIUM),
         }
@@ -1044,7 +1218,7 @@ class Simulation:
                 continue
             candidates = [p for p in self._residents(region.id)
                           if p.life_stage() == "adult" and p.golden_status in {"awakened", "demigod"}
-                          and p.factors[factor] >= 70]
+                          and p.factors[factor] >= 70 and self._matches_coreflame_factor(p, titan)]
             if not candidates:
                 continue
             candidate = max(candidates, key=lambda p: (p.factors[factor] + p.resonance_years * 3 + p.world_impact, p.id))
@@ -1053,13 +1227,230 @@ class Simulation:
             self._credit_impact(candidate, 1, f"推进{trial_name}")
             if titan.trial_progress < 100:
                 continue
-            titan.coreflame_holder = candidate.id
+            self._inherit_coreflame(titan, candidate, trial_name)
+
+    @staticmethod
+    def _reason_exam_years(person: Person) -> int:
+        """Map wisdom to 20..5 years per exam on an exponential curve."""
+        wisdom = (person.factors[Factor.ERUDITION] + person.insight) / 2
+        normalized = max(0.0, min(1.0, (wisdom - 40) / 60))
+        return max(5, min(20, round(20 * (0.25 ** normalized))))
+
+    def _is_reason_candidate(self, person: Person) -> bool:
+        return (
+            person.alive
+            and person.golden_status == "awakened"
+            and self._matches_coreflame_factor(person, self.state.titans["cerces"])
+            and (person.life_stage() == "adult" or "cerces_exam_started" in person.memories)
+        )
+
+    def _resolve_reason_trial(self) -> None:
+        """Run the four deterministic Cerces examinations for every candidate."""
+        titan = self.state.titans["cerces"]
+        if titan.coreflame_status != "within_titan":
+            return
+        candidates = sorted(
+            (person for person in self.state.people.values() if self._is_reason_candidate(person)),
+            key=lambda person: person.id,
+        )
+        for candidate in candidates:
+            if "cerces_exam_started" not in candidate.memories:
+                candidate.memories.append("cerces_exam_started")
+                self._emit("reason_exam_started", f"{candidate.name}开始参加瑟希斯四证。", ("factor:erudition",), ("trial:cerces:started",), (candidate.id,))
+            exam_index = candidate.trial_evidence.get("cerces_exam_index", 0)
+            if exam_index >= len(REASON_EXAMS):
+                continue
+            years = candidate.trial_evidence.get("cerces_exam_years", 0) + 1
+            required = self._reason_exam_years(candidate)
+            candidate.trial_evidence["cerces_exam_years"] = years
+            if years >= required:
+                exam_name = REASON_EXAMS[exam_index]
+                exam_index += 1
+                candidate.trial_evidence["cerces_exam_index"] = exam_index
+                candidate.trial_evidence["cerces_exam_years"] = 0
+                self._credit_impact(candidate, 2, f"通过瑟希斯四证·{exam_name}")
+                self._emit("reason_exam_passed", f"{candidate.name}通过瑟希斯四证的“{exam_name}”。", (f"wisdom:{round((candidate.factors[Factor.ERUDITION] + candidate.insight) / 2)}",), (f"trial:cerces:exam:{exam_index}",), (candidate.id,))
+            completed = candidate.trial_evidence.get("cerces_exam_index", 0)
+            current_years = candidate.trial_evidence.get("cerces_exam_years", 0)
+            progress = (completed + current_years / max(1, required)) / len(REASON_EXAMS)
+            titan.trial_progress = max(titan.trial_progress, min(100, round(progress * 100)))
+            if completed >= len(REASON_EXAMS):
+                titan.authority_state = {"created_demigod_ids": []}
+                self._inherit_coreflame(titan, candidate, "瑟希斯四证")
+                return
+
+    def _resolve_earth_trial(self) -> None:
+        titan = self.state.titans["georios"]
+        if titan.coreflame_status != "within_titan":
+            return
+        candidates = [
+            person for person in self.state.people.values()
+            if person.alive and self._is_earth_candidate(person)
+            and person.trial_evidence.get("georios", 0) >= EARTH_STEWARDSHIP_YEARS
+            and person.stewardship_region_id == person.region_id
+            and self.state.regions[person.region_id].status != "lost"
+        ]
+        if not candidates:
+            titan.trial_progress = max(0, titan.trial_progress - 1)
+            return
+        candidate = max(candidates, key=lambda person: (
+            person.trial_evidence["georios"], person.factors[Factor.PERMANENCE], person.body, person.world_impact, person.id,
+        ))
+        gain = 4 + candidate.trial_evidence["georios"] // 2
+        titan.trial_progress = min(100, titan.trial_progress + gain)
+        self._credit_impact(candidate, 1, "推进吉奥里亚的守土者试炼")
+        if titan.trial_progress >= 100:
+            candidate.bound_region_id = candidate.region_id
+            titan.authority_state = {"bonded_region_id": candidate.region_id, "land_burden": 0}
+            self._inherit_coreflame(titan, candidate, "大地火种试炼")
+
+    def _inherit_coreflame(self, titan: Titan, candidate: Person, trial_name: str) -> None:
+        """Apply the shared state change for a successful fire trial."""
+        was_awakened = candidate.golden_status == "awakened"
+        titan.coreflame_holder = candidate.id
+        titan.coreflame_status = "held"
+        titan.coreflame_returned_year = None
+        titan.authority_state["inherited_year"] = self.state.year
+        if titan.id not in candidate.coreflames:
             candidate.coreflames.append(titan.id)
-            candidate.golden_status = "demigod"
-            titan.stability = min(100, titan.stability + 18)
-            titan.corruption = max(0, titan.corruption - 15)
-            self._credit_impact(candidate, 25, f"通过{trial_name}并承接{titan.domain}火种")
-            self._emit("coreflame_inherited", f"{candidate.name}通过{trial_name}，承接了{titan.name}的{titan.domain}火种。", (f"titan:{titan.id}", f"factor:{factor.value}"), (f"coreflame:{titan.id}:inherited",), (candidate.id,))
+        candidate.golden_status = "demigod"
+        titan.stability = min(100, titan.stability + 18)
+        titan.corruption = max(0, titan.corruption - 15)
+        self._credit_impact(candidate, 25, f"通过{trial_name}并承接{titan.domain}火种")
+        self._emit("coreflame_inherited", f"{candidate.name}通过{trial_name}，承接了{titan.name}的{titan.domain}火种。", (f"titan:{titan.id}", f"factor:{titan.factor.value}"), (f"coreflame:{titan.id}:inherited",), (candidate.id,))
+        reason = self.state.titans["cerces"]
+        if titan.id != "cerces" and was_awakened and reason.coreflame_status == "held":
+            created_ids = list(reason.authority_state.get("created_demigod_ids", []))
+            if candidate.id not in created_ids:
+                created_ids.append(candidate.id)
+                reason.authority_state["created_demigod_ids"] = created_ids
+                holder = self.state.people.get(reason.coreflame_holder or "")
+                if holder is not None and holder.alive:
+                    self._credit_impact(holder, 8, f"以理性权能培养出半神{candidate.name}")
+                    self._emit("reason_demigod_created", f"{candidate.name}在{holder.name}的理性教导下通过{titan.name}火种试炼，成为半神；权能已完成 {len(created_ids)}/{REASON_GOLDEN_QUOTA}。", ("coreflame:cerces", f"coreflame:{titan.id}:inherited"), (f"person:{candidate.id}:demigod",), (holder.id, candidate.id))
+
+    def _return_coreflame(self, titan: Titan, holder: Person, reason: str) -> None:
+        """Return a fire to the world without erasing the holder's history."""
+        if titan.id in holder.coreflames:
+            holder.coreflames.remove(titan.id)
+        if titan.id not in holder.returned_coreflames:
+            holder.returned_coreflames.append(titan.id)
+        titan.coreflame_holder = None
+        titan.coreflame_status = "returned"
+        titan.coreflame_returned_year = self.state.year
+        self._emit("coreflame_returned", f"{holder.name}将{titan.name}的{titan.domain}火种归还创世涡心：{reason}。", (f"coreflame:{titan.id}:held"), (f"coreflame:{titan.id}:returned",), (holder.id,))
+
+    def _resolve_gate_authority(self) -> None:
+        """Janus opens a final route for an awakened person stranded while fleeing."""
+        titan = self.state.titans["janus"]
+        if titan.coreflame_status != "held" or titan.coreflame_holder is None:
+            return
+        holder = self.state.people.get(titan.coreflame_holder)
+        charges = int(titan.authority_state.get("rescue_charges", 0))
+        okhema = self.state.regions["okhema"]
+        if holder is None or not holder.alive or charges <= 0 or okhema.status == "lost":
+            return
+        candidates = [
+            person for person in self.state.people.values()
+            if person.alive and person.golden_status == "awakened"
+            and person.region_id != "okhema" and person.gate_stranded_year == self.state.year
+        ]
+        if not candidates:
+            return
+        rescued = min(candidates, key=lambda person: (person.health, -self.state.regions[person.region_id].black_tide, person.id))
+        origin = self.state.regions[rescued.region_id]
+        rescued.region_id = "okhema"
+        rescued.health = max(35, rescued.health)
+        titan.authority_state["rescue_charges"] = charges - 1
+        self._credit_impact(holder, 5, f"以门径火种救回濒死的黄金裔候选{rescued.name}")
+        rescued.gate_stranded_year = None
+        self._emit("gate_rescue", f"{rescued.name}试图逃离{origin.name}却发现道路断绝；{holder.name}打开门径，将其送回奥赫玛；剩余额度 {charges - 1}。", (f"region:{origin.id}:black_tide", f"person:{rescued.id}:stranded"), (f"person:{rescued.id}:relocated:okhema", "authority:janus:rescue"), (holder.id, rescued.id))
+        if charges - 1 == 0:
+            self._return_coreflame(titan, holder, "门径额度在最后一次救援中耗尽")
+            self._record_death(holder, "门径火种额度耗尽后，为最后的通路献祭")
+
+    def _resolve_earth_authority(self) -> None:
+        """A Georios holder heals their bonded land, then founds a final refuge."""
+        titan = self.state.titans["georios"]
+        if titan.coreflame_status != "held" or titan.coreflame_holder is None:
+            return
+        holder = self.state.people.get(titan.coreflame_holder)
+        if holder is None or not holder.alive:
+            return
+        region_id = holder.bound_region_id or str(titan.authority_state.get("bonded_region_id", ""))
+        region = self.state.regions.get(region_id)
+        if region is not None and region.status != "lost":
+            food_restored = max(100, region.population // 100)
+            region.food += food_restored
+            region.defense = min(40, region.defense + 1)
+            if region.black_tide > region.tide_source:
+                region.black_tide -= 1
+            if region.scars:
+                region.scars -= 1
+                titan.authority_state["land_burden"] = int(titan.authority_state.get("land_burden", 0)) + 1
+            if self.state.year % 5 == 0:
+                self._emit("earth_restoration", f"{holder.name}与{region.name}的土地共同承受伤痕，恢复了粮食、工事与生机。", (f"coreflame:georios",), (f"food:{region.id}:+{food_restored}", f"defense:{region.id}:+1"), (holder.id,))
+        lost_regions = sum(item.status == "lost" for item in self.state.regions.values())
+        inherited_year = int(titan.authority_state.get("inherited_year", self.state.year))
+        holding_years = self.state.year - inherited_year
+        if (lost_regions >= 5 and holding_years >= EARTH_MIN_HOLDING_YEARS
+                and self.state.regions["okhema"].status != "lost"
+                and "georios_foundation" not in self.state.regions):
+            self._found_earth_foundation(holder, titan)
+
+    def _resolve_reason_authority(self) -> None:
+        """Cerces strengthens Golden Ones until the third demi-god exhausts the fire."""
+        titan = self.state.titans["cerces"]
+        if titan.coreflame_status != "held" or titan.coreflame_holder is None:
+            return
+        holder = self.state.people.get(titan.coreflame_holder)
+        if holder is None or not holder.alive:
+            return
+
+        # Every living Golden candidate benefits from the holder's teaching,
+        # regardless of which fire they may eventually pursue.
+        for golden in self.state.people.values():
+            if not golden.alive or golden.golden_status != "awakened":
+                continue
+            for attribute in (
+                "body", "insight", "social", "leadership", "courage", "empathy",
+                "willpower", "restraint", "ambition", "adaptability", "responsibility",
+            ):
+                setattr(golden, attribute, min(100, getattr(golden, attribute) + 1))
+
+        created_ids = list(titan.authority_state.get("created_demigod_ids", []))
+        if len(created_ids) >= REASON_GOLDEN_QUOTA:
+            self._return_coreflame(titan, holder, "培养出三名半神后，理性权能耗尽")
+            self._record_death(holder, "理性权能在培养三名半神后耗尽，为完成教导而献祭")
+
+    def _found_earth_foundation(self, holder: Person, titan: Titan) -> None:
+        """Leave a real, fallible place for survivors to rebuild beside Okhema."""
+        foundation_id = "georios_foundation"
+        okhema = self.state.regions["okhema"]
+        settlers = min(okhema.population, max(400, min(2_400, okhema.population // 20)))
+        foundation = Region(
+            foundation_id, "磐生城", settlers, 2_400, 46, 34, 8, 12, 8, ("okhema",),
+            refuge_capacity=EARTH_FOUNDATION_CAPACITY,
+            refuge_capacity_limit=EARTH_FOUNDATION_CAPACITY,
+            defense=12,
+            titan_faiths={"georios": 80, "mnestia": 12, "janus": 8},
+        )
+        self.state.regions[foundation_id] = foundation
+        okhema.population -= settlers
+        okhema.neighbours = tuple((*okhema.neighbours, foundation_id))
+        total_population = sum(region.population for region in self.state.regions.values())
+        sample_size = max(1, round(self.population * settlers / max(1, total_population))) if settlers else 0
+        volunteers = sorted(
+            (person for person in self._residents("okhema") if not self._is_demigod(person)),
+            key=lambda person: (person.adaptability + person.responsibility, person.world_impact, person.id),
+            reverse=True,
+        )[:sample_size]
+        for person in volunteers:
+            person.region_id = foundation_id
+            self._record_life_trace(person, "organization_action", responsibility=1)
+        self._return_coreflame(titan, holder, "以自身与火种在奥赫玛附近扎根，留下新城基址")
+        self._record_death(holder, "以自身与大地火种扎根，化为新城基址")
+        self._emit("earth_foundation", f"{holder.name}在奥赫玛附近扎根，磐生城携{settlers}名首批居民诞生，可容纳最多{EARTH_FOUNDATION_CAPACITY}名幸存者重建家园。", ("world:five_regions_lost", "coreflame:georios"), (f"region:{foundation_id}:created", f"population:{foundation_id}:{settlers}", f"refuge_capacity:{foundation_id}:{EARTH_FOUNDATION_CAPACITY}"), (holder.id, *tuple(person.id for person in volunteers[:4])))
 
     def _update_historical_focus(self) -> None:
         for person in self.state.people.values():
@@ -1074,15 +1465,17 @@ class Simulation:
 
     def _resolve_lost_person(self, person: Person, region: Region) -> None:
         """Detailed remnants either flee, fade, or endure as a demi-god."""
-        destinations = [
-            self.state.regions[region_id] for region_id in region.neighbours
-            if self.state.regions[region_id].status != "lost"
-            and self.state.regions[region_id].population < self.state.regions[region_id].refuge_capacity
-        ]
+        destinations = self._safe_refuges(region)
         if destinations:
             destination = min(destinations, key=lambda item: (item.black_tide, item.population / max(1, item.refuge_capacity), item.id))
             person.region_id = destination.id
             return
+        if person.golden_status == "awakened":
+            # A fallen city with no remaining exit is the same broken-route
+            # moment as a failed voluntary flight. Mark it before ordinary
+            # remnant attrition so Janus can answer during this year's turn.
+            person.gate_stranded_year = self.state.year
+        self._record_life_trace(person, "loss")
         if self._is_demigod(person):
             person.health = max(1, person.health)
             return
@@ -1125,6 +1518,10 @@ class Simulation:
                 person = Person(
                     ident, f"{given_name}·{family_name}", region.id, rng.randint(16, 55), factors,
                     rng.randint(25, 75), rng.randint(25, 75), rng.randint(25, 75), rng.randint(20, 70),
+                    courage=rng.randint(25, 75), empathy=rng.randint(25, 75),
+                    willpower=rng.randint(25, 75), restraint=rng.randint(25, 75),
+                    ambition=rng.randint(25, 75), adaptability=rng.randint(25, 75),
+                    responsibility=rng.randint(25, 75),
                     family_name=family_name,
                 )
                 self.state.people[ident] = person
@@ -1155,6 +1552,31 @@ class Simulation:
         lost = sum(region.status == "lost" for region in self.state.regions.values())
         self._emit("world_status", f"第{self.state.year}年｜居民总数 {civilians}；独立人物 {alive}；黄金裔/候选 {golden}；平均黑潮 {tide}/100；失陷城邦 {lost}；世界劫余 {self.state.world_wear}。", (), ())
 
+    def _factor_path_leaders(self) -> dict[str, dict[str, object]]:
+        """Expose one meaningful life journey for each factor, never a crowd."""
+        titan_for_factor = {titan.factor: titan.id for titan in self.state.titans.values()}
+        leaders: dict[str, dict[str, object]] = {}
+        for factor in Factor:
+            titan_id = titan_for_factor[factor]
+            candidates: list[tuple[int, Person]] = []
+            for person in self.state.people.values():
+                has_matching_fire = titan_id in person.coreflames or titan_id in person.returned_coreflames
+                has_matching_evidence = person.trial_evidence.get(titan_id, 0) > 0
+                if person.dominant_factor() != factor and not has_matching_fire and not has_matching_evidence:
+                    continue
+                if (person.world_impact < HISTORICAL_IMPACT_THRESHOLD and person.golden_status == "ordinary"
+                        and not has_matching_fire and not has_matching_evidence):
+                    continue
+                score = person.factors[factor] + person.resonance_years * 6 + person.world_impact * 3
+                score += 100 if person.golden_status == "awakened" else 250 if person.golden_status == "demigod" else 0
+                score += 400 if has_matching_fire else person.trial_evidence.get(titan_id, 0) * 30
+                candidates.append((score, person))
+            if not candidates:
+                continue
+            _score, leader = max(candidates, key=lambda item: (item[0], item[1].alive, item[1].id))
+            leaders[factor.value] = {**leader.snapshot(), "path_factor": factor.value}
+        return leaders
+
     def world_snapshot(self, include_events: bool = False) -> dict[str, object]:
         alive = [p for p in self.state.people.values() if p.alive]
         focus = sorted(
@@ -1183,6 +1605,7 @@ class Simulation:
             "organizations": {key: value.snapshot() for key, value in sorted(self.state.organizations.items())},
             "historical_focus": {p.id: p.snapshot() for p in focus},
             "historical_archive": {p.id: p.snapshot() for p in archive},
+            "factor_paths": self._factor_path_leaders(),
             "crises": {key: value.snapshot() for key, value in sorted(self.state.crises.items())},
             "refuge_crises": {key: value.snapshot() for key, value in sorted(self.state.refuge_crises.items())},
             "recent_events": [event.snapshot() for event in self.state.events[-25:]],
