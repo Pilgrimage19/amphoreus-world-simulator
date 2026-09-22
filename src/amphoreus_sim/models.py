@@ -181,6 +181,9 @@ class Person:
     insight: int
     social: int
     leadership: int
+    # Birthplace remains stable across migration and can stand in for bloodline
+    # in trials whose full ancestry rules have not yet been modelled.
+    origin_region_id: str = ""
     courage: int = 50
     empathy: int = 50
     willpower: int = 50

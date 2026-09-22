@@ -487,6 +487,90 @@ class SimulationTests(unittest.TestCase):
         self.assertEqual(candidate.bound_region_id, "okhema")
         self.assertIn("georios", candidate.coreflames)
 
+    def test_people_keep_their_birthplace_after_migration(self) -> None:
+        simulation = Simulation(42, population=100)
+        skyward_people = [person for person in simulation.state.people.values() if person.origin_region_id == "skyward"]
+        self.assertTrue(skyward_people)
+        self.assertTrue(all(person.dominant_factor() is Factor.PRESERVATION for person in skyward_people))
+        person = simulation.state.people["person-0001"]
+        birthplace = person.origin_region_id
+        person.region_id = "okhema" if birthplace != "okhema" else "grove"
+        self.assertEqual(person.origin_region_id, birthplace)
+
+    def test_sky_trial_requires_skyward_origin_and_repeated_passage_guardianship(self) -> None:
+        simulation = Simulation(42, population=100)
+        for person in simulation.state.people.values():
+            person.golden_status = "ordinary"
+        candidate = simulation.state.people["person-0001"]
+        candidate.age, candidate.golden_status = 25, "awakened"
+        candidate.origin_region_id, candidate.region_id = "skyward", "janusopolis"
+        for factor in Factor:
+            candidate.factors[factor] = 20
+        candidate.factors[Factor.PRESERVATION] = 90
+        region = simulation.state.regions["janusopolis"]
+        region.black_tide = 35
+
+        for year in range(50, 55):
+            simulation.state.year = year
+            simulation._record_sky_passage(candidate, region, "aid")
+        candidate.memories.append("witnessed_skyward_fall")
+        for year in range(55, 72):
+            simulation.state.year = year
+            simulation._resolve_sky_trial()
+
+        aquila = simulation.state.titans["aquila"]
+        self.assertEqual(candidate.trial_evidence["aquila"], 5)
+        self.assertEqual(aquila.coreflame_holder, candidate.id)
+        self.assertIn("aquila", candidate.coreflames)
+
+        outsider = simulation.state.people["person-0002"]
+        outsider.age, outsider.golden_status, outsider.origin_region_id = 25, "awakened", "okhema"
+        for factor in Factor:
+            outsider.factors[factor] = 20
+        outsider.factors[Factor.PRESERVATION] = 90
+        self.assertFalse(simulation._is_sky_candidate(outsider))
+
+    def test_sky_authority_warns_and_reinforces_the_most_threatened_city(self) -> None:
+        simulation = Simulation(42, population=100)
+        holder = simulation.state.people["person-0001"]
+        simulation._inherit_coreflame(simulation.state.titans["aquila"], holder, "测试高天试炼")
+        for region in simulation.state.regions.values():
+            region.black_tide = 10
+        threatened = simulation.state.regions["styxia"]
+        threatened.black_tide, threatened.tension, threatened.defense = 65, 70, 4
+
+        simulation._resolve_sky_authority()
+
+        aquila = simulation.state.titans["aquila"]
+        self.assertEqual(threatened.defense, 5)
+        self.assertEqual(aquila.authority_state["warnings_issued"], 1)
+        self.assertEqual(aquila.authority_state["storm_burden"], 1)
+
+    def test_sky_healing_prevents_okhemas_first_irreversible_fall(self) -> None:
+        simulation = Simulation(42, population=100)
+        holder = simulation.state.people["person-0001"]
+        aquila = simulation.state.titans["aquila"]
+        simulation._inherit_coreflame(aquila, holder, "测试高天试炼")
+        okhema = simulation.state.regions["okhema"]
+        okhema.population, okhema.food, okhema.order = 1_000, 0, 0
+        okhema.black_tide, okhema.tide_source = 90, 60
+        okhema.collapse_years, okhema.scars = 5, 3
+
+        simulation._resolve_region_statuses()
+
+        self.assertNotEqual(okhema.status, "lost")
+        self.assertEqual(okhema.collapse_years, 0)
+        self.assertLess(okhema.black_tide, 90)
+        self.assertFalse(holder.alive)
+        self.assertEqual(aquila.coreflame_status, "returned")
+        self.assertEqual(aquila.authority_state["healing_used"], 1)
+        self.assertTrue(any(event.type == "sky_healing" for event in simulation.state.events))
+
+        okhema.black_tide, okhema.food, okhema.order = 90, 0, 0
+        okhema.collapse_years = 5
+        simulation._resolve_region_statuses()
+        self.assertEqual(okhema.status, "lost")
+
     def test_earth_trial_rejects_a_golden_whose_highest_factor_is_not_permanence(self) -> None:
         simulation = Simulation(42, population=100)
         for person in simulation.state.people.values():

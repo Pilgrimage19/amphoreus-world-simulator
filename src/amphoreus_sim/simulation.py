@@ -31,6 +31,7 @@ REASON_GOLDEN_QUOTA = 3
 LAW_STEWARDSHIP_YEARS = 5
 ROMANCE_WEAVES_REQUIRED = 3
 ROMANCE_SACRIFICE_WEAVES = 6
+SKY_PASSAGES_REQUIRED = 5
 
 TITAN_DATA = (
     ("aquila", "艾格勒", "天空", Factor.PRESERVATION, "支柱", "skyward"),
@@ -148,11 +149,13 @@ class Simulation:
             factors = {factor: rng.randint(15, 65) for factor in Factor}
             dominant = rng.choice(tuple(Factor))
             factors[dominant] = min(82, factors[dominant] + rng.randint(12, 24))
+            self._shape_birthplace_factors(region_id, factors)
             ident = f"person-{index:04d}"
             given_name, family_name = self._person_name(region_id, ident)
             people[ident] = Person(ident, f"{given_name}·{family_name}", region_id,
                                    rng.randint(12, 68), factors, rng.randint(25, 75), rng.randint(25, 75),
                                    rng.randint(25, 75), rng.randint(20, 70),
+                                   origin_region_id=region_id,
                                    courage=rng.randint(25, 75), empathy=rng.randint(25, 75),
                                    willpower=rng.randint(25, 75), restraint=rng.randint(25, 75),
                                    ambition=rng.randint(25, 75), adaptability=rng.randint(25, 75),
@@ -162,6 +165,7 @@ class Simulation:
         factors = dict(anchor.factors)
         factors[Factor.HARMONY], factors[Factor.REMEMBRANCE] = 96, max(78, factors[Factor.REMEMBRANCE])
         people["tribios"] = Person("tribios", "缇里西庇俄丝", "janusopolis", 24, factors, 46, 82, 91, 78,
+                                    origin_region_id="janusopolis",
                                     courage=80, empathy=88, willpower=86, restraint=70, ambition=72, adaptability=84,
                                     responsibility=86)
         return people
@@ -170,6 +174,12 @@ class Simulation:
         given_names, family_names = NAME_DATA.get(region_id, NAME_DATA["okhema"])
         rng = self.random.get(f"name:{person_id}")
         return rng.choice(given_names), rng.choice(family_names)
+
+    @staticmethod
+    def _shape_birthplace_factors(region_id: str, factors: dict[Factor, int]) -> None:
+        """Apply rare, explicit birthplace legacies without creating a chosen hero."""
+        if region_id == "skyward":
+            factors[Factor.PRESERVATION] = min(90, max(72, max(factors.values()) + 1))
 
     def _seed_titan_stances(self, people: dict[str, Person], regions: dict[str, Region]) -> None:
         """Give people a small, mixed religious horizon instead of one assigned god."""
@@ -246,6 +256,7 @@ class Simulation:
         self._maintain_representatives()
         self._resolve_organizations()
         self._resolve_coreflame_trials()
+        self._resolve_sky_authority()
         self._resolve_earth_authority()
         self._resolve_law_authority()
         self._resolve_romance_authority()
@@ -565,6 +576,8 @@ class Simulation:
                 region.collapse_years = max(0, region.collapse_years - 1)
             previous = region.status
             if region.collapse_years >= 6:
+                if self._trigger_sky_healing(region):
+                    continue
                 region.status = "lost"
             elif region.black_tide >= 50 or civic_collapse:
                 region.status = "endangered"
@@ -577,6 +590,12 @@ class Simulation:
             if region.status == "lost" and previous != "lost":
                 region.scars += 1
                 region.defense = max(0, region.defense - 5)
+                if region.id == "skyward":
+                    for descendant in self.state.people.values():
+                        if descendant.alive and descendant.origin_region_id == "skyward":
+                            if "witnessed_skyward_fall" not in descendant.memories:
+                                descendant.memories.append("witnessed_skyward_fall")
+                                self._record_life_trace(descendant, "loss")
                 self._emit("region_lost", f"{region.name}在黑潮中失陷；幸存者、遗产与火种去向将成为后续历史的争夺。", (f"black_tide:{region.id}", f"population:{region.id}:{region.population}"), (f"region:{region.id}:lost",))
             elif region.status == "overwhelmed" and previous != "overwhelmed":
                 self._emit("refuge_overwhelmed", f"{region.name}的避难容量被突破，难民安置开始反噬粮食与秩序。", (f"population:{region.id}:{region.population}",), (f"region:{region.id}:overcrowded",))
@@ -721,6 +740,7 @@ class Simulation:
             event = self._act(person, region, action)
             self._record_earth_stewardship(person, region, action)
             self._resolve_relationships(person, action)
+            self._record_sky_passage(person, region, action)
             self._record_law_stewardship(person, region, action)
             self._record_romance_weaving(person, region, action)
             self._form_social_ties(person)
@@ -756,6 +776,7 @@ class Simulation:
                     factor: max(10, min(90, (parent_a.factors[factor] + parent_b.factors[factor]) // 2 + rng.randint(-10, 10)))
                     for factor in Factor
                 }
+                self._shape_birthplace_factors(region.id, factors)
                 given_name, fallback_family = self._person_name(region.id, ident)
                 family_name = self.random.get(f"family:{ident}").choice(
                     (parent_a.family_name, parent_a.family_name, parent_b.family_name, parent_b.family_name, fallback_family)
@@ -763,6 +784,7 @@ class Simulation:
                 child = Person(
                     ident, f"{given_name}·{family_name}", region.id, 0, factors,
                     rng.randint(20, 50), rng.randint(20, 50), rng.randint(20, 50), rng.randint(15, 40),
+                    origin_region_id=region.id,
                     courage=self._inherited_trait(parent_a.courage, parent_b.courage, rng),
                     empathy=self._inherited_trait(parent_a.empathy, parent_b.empathy, rng),
                     willpower=self._inherited_trait(parent_a.willpower, parent_b.willpower, rng),
@@ -837,6 +859,9 @@ class Simulation:
             weights["work"] += 35
             weights["aid"] += 12
             weights["organize"] += 8
+        if self._is_sky_candidate(person) and region.black_tide >= 25:
+            weights["aid"] += 30
+            weights["organize"] += 18
         if self._is_law_candidate(person) and (region.tension >= 25 or region.black_tide >= 25):
             weights["organize"] += 30
             weights["aid"] += 10
@@ -949,6 +974,22 @@ class Simulation:
         if previous_evidence < EARTH_STEWARDSHIP_YEARS == evidence:
             self._emit("earth_trial_ready", f"{person.name}在{region.name}持续守土，吉奥里亚的试炼开始回应。", (f"person:{person.id}:stewardship"), ("trial:georios:ready",), (person.id,))
 
+    def _record_sky_passage(self, person: Person, region: Region, action: str) -> None:
+        """Record a Skyward descendant keeping a refuge route open under real pressure."""
+        if (not self._is_sky_candidate(person) or region.status == "lost"
+                or region.black_tide < 25 or action not in {"aid", "organize", "flee"}):
+            return
+        if "aquila_passage_started" not in person.memories:
+            person.memories.append("aquila_passage_started")
+            self._emit("sky_trial_started", f"{person.name}以高天遗迹后裔的身份，在{region.name}开始维持风暴中的避难通道。", ("origin:skyward", f"black_tide:{region.id}"), ("trial:aquila:started",), (person.id,))
+        previous = person.trial_evidence.get("aquila", 0)
+        evidence = min(SKY_PASSAGES_REQUIRED, previous + 1)
+        person.trial_evidence["aquila"] = evidence
+        self._record_life_trace(person, "guardianship", responsibility=1)
+        self._credit_impact(person, 1, f"在{region.name}的风暴与黑潮中维持避难通道")
+        if previous < SKY_PASSAGES_REQUIRED == evidence:
+            self._emit("sky_trial_ready", f"{person.name}五次守住风暴中的避难通道，艾格勒的血脉试炼开始回应。", (f"person:{person.id}:sky_passage"), ("trial:aquila:ready",), (person.id,))
+
     def _record_law_stewardship(self, person: Person, region: Region, action: str) -> None:
         """Talanton answers to a rule freely kept when keeping it is difficult."""
         if not self._is_law_candidate(person) or region.status == "lost":
@@ -1022,6 +1063,15 @@ class Simulation:
             person.life_stage() == "adult"
             and person.golden_status == "awakened"
             and self._matches_coreflame_factor(person, self.state.titans["georios"])
+        )
+
+    def _is_sky_candidate(self, person: Person) -> bool:
+        return (
+            person.alive
+            and person.golden_status == "awakened"
+            and person.origin_region_id == "skyward"
+            and self._matches_coreflame_factor(person, self.state.titans["aquila"])
+            and (person.life_stage() == "adult" or "aquila_passage_started" in person.memories)
         )
 
     def _is_law_candidate(self, person: Person) -> bool:
@@ -1282,6 +1332,7 @@ class Simulation:
 
     def _resolve_coreflame_trials(self) -> None:
         """Resolve the implemented trials; a fire is never granted from a stat alone."""
+        self._resolve_sky_trial()
         self._resolve_earth_trial()
         self._resolve_law_trial()
         self._resolve_romance_trial()
@@ -1313,6 +1364,31 @@ class Simulation:
             if titan.trial_progress < 100:
                 continue
             self._inherit_coreflame(titan, candidate, trial_name)
+
+    def _resolve_sky_trial(self) -> None:
+        titan = self.state.titans["aquila"]
+        if titan.coreflame_status != "within_titan":
+            return
+        candidates = [
+            person for person in self.state.people.values()
+            if self._is_sky_candidate(person)
+            and person.trial_evidence.get("aquila", 0) >= SKY_PASSAGES_REQUIRED
+            and "witnessed_skyward_fall" in person.memories
+            and self.state.regions[person.region_id].status != "lost"
+        ]
+        if not candidates:
+            titan.trial_progress = max(0, titan.trial_progress - 1)
+            return
+        candidate = max(candidates, key=lambda person: (
+            person.courage + person.body + person.leadership
+            + person.life_traces.get("guardianship", 0) + person.world_impact,
+            person.id,
+        ))
+        titan.trial_progress = min(100, titan.trial_progress + 6)
+        self._credit_impact(candidate, 1, "推进艾格勒的高天血脉试炼")
+        if titan.trial_progress >= 100:
+            titan.authority_state = {"storm_burden": 0, "warnings_issued": 0, "healing_used": 0}
+            self._inherit_coreflame(titan, candidate, "高天血脉与避难通道试炼")
 
     def _resolve_law_trial(self) -> None:
         titan = self.state.titans["talanton"]
@@ -1497,6 +1573,56 @@ class Simulation:
         if charges - 1 == 0:
             self._return_coreflame(titan, holder, "门径额度在最后一次救援中耗尽")
             self._record_death(holder, "门径火种额度耗尽后，为最后的通路献祭")
+
+    def _resolve_sky_authority(self) -> None:
+        """Aquila warns the most threatened surviving city and reinforces its refuge route."""
+        titan = self.state.titans["aquila"]
+        if titan.coreflame_status != "held" or titan.coreflame_holder is None:
+            return
+        holder = self.state.people.get(titan.coreflame_holder)
+        if holder is None or not holder.alive:
+            return
+        threatened = [
+            region for region in self.state.regions.values()
+            if region.status != "lost" and region.black_tide >= 25
+        ]
+        if not threatened:
+            return
+        region = max(threatened, key=lambda item: (item.black_tide + item.tension, item.population, item.id))
+        before_defense = region.defense
+        region.defense = min(40, region.defense + 1)
+        titan.authority_state["warnings_issued"] = int(titan.authority_state.get("warnings_issued", 0)) + 1
+        if region.black_tide >= 50:
+            titan.authority_state["storm_burden"] = int(titan.authority_state.get("storm_burden", 0)) + 1
+            holder.health = max(1, holder.health - 1)
+        if self.state.year % 5 == 0:
+            defense_gain = region.defense - before_defense
+            self._emit("sky_warning", f"{holder.name}预见{region.name}上空的黑潮风暴，提前维持避难通道与防线。", ("coreflame:aquila", f"black_tide:{region.id}"), (f"defense:{region.id}:+{defense_gain}", "authority:aquila:warning"), (holder.id,))
+
+    def _trigger_sky_healing(self, region: Region) -> bool:
+        """Spend Aquila once to cancel Okhema's otherwise irreversible fall."""
+        titan = self.state.titans["aquila"]
+        if (region.id != "okhema" or titan.coreflame_status != "held"
+                or titan.coreflame_holder is None or int(titan.authority_state.get("healing_used", 0))):
+            return False
+        holder = self.state.people.get(titan.coreflame_holder)
+        if holder is None or not holder.alive:
+            return False
+        before_tide = region.black_tide
+        titan.authority_state["healing_used"] = 1
+        region.tide_source = max(5, region.tide_source - 20)
+        region.black_tide = max(region.tide_source, min(35, region.black_tide - 40))
+        region.collapse_years = 0
+        region.order = min(100, region.order + 20)
+        region.tension = max(0, region.tension - 20)
+        region.defense = min(40, region.defense + 12)
+        region.food = max(region.food, region.population // 2)
+        region.scars = max(0, region.scars - 2)
+        region.status = "endangered" if region.black_tide >= 50 else "stable"
+        self._return_coreflame(titan, holder, "在奥赫玛不可逆坠落前发动唯一一次天空治愈")
+        self._record_death(holder, "以自身与天空火种治愈奥赫玛，为旧世界争取新的存续期")
+        self._emit("sky_healing", f"奥赫玛即将不可逆失陷时，{holder.name}献祭自身发动天空治愈；黑潮由 {before_tide} 降至 {region.black_tide}，城邦避免了这次坠落。", ("region:okhema:collapse_imminent", "coreflame:aquila"), ("region:okhema:fall_prevented", f"black_tide:okhema:{region.black_tide}"), (holder.id,))
+        return True
 
     def _resolve_earth_authority(self) -> None:
         """A Georios holder heals their bonded land, then founds a final refuge."""
@@ -1704,10 +1830,12 @@ class Simulation:
                 factors = {factor: rng.randint(18, 68) for factor in Factor}
                 dominant = rng.choice(tuple(Factor))
                 factors[dominant] = min(85, factors[dominant] + rng.randint(8, 20))
+                self._shape_birthplace_factors(region.id, factors)
                 given_name, family_name = self._person_name(region.id, ident)
                 person = Person(
                     ident, f"{given_name}·{family_name}", region.id, rng.randint(16, 55), factors,
                     rng.randint(25, 75), rng.randint(25, 75), rng.randint(25, 75), rng.randint(20, 70),
+                    origin_region_id=region.id,
                     courage=rng.randint(25, 75), empathy=rng.randint(25, 75),
                     willpower=rng.randint(25, 75), restraint=rng.randint(25, 75),
                     ambition=rng.randint(25, 75), adaptability=rng.randint(25, 75),

@@ -140,6 +140,7 @@ class WorldServerTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(detail["id"], "tribios")
         self.assertIn("region_name", detail)
+        self.assertEqual(detail["origin_region_name"], "雅努萨波利斯")
         self.assertIn("relationship_details", detail)
 
         self.assertEqual(self.request("GET", "/api/person/not-found")[0], 404)

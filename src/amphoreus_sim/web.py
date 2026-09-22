@@ -71,6 +71,8 @@ class WorldServer(ThreadingHTTPServer):
                 return None
             detail = person.snapshot()
             detail["region_name"] = self.simulation.state.regions[person.region_id].name
+            origin = self.simulation.state.regions.get(person.origin_region_id)
+            detail["origin_region_name"] = origin.name if origin else "出身不详"
             detail["titan_relations"] = [
                 {
                     "id": titan_id,

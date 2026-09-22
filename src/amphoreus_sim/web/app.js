@@ -68,6 +68,7 @@ function render(state) {
   byId("titans").innerHTML = Object.values(state.titans).map((titan) => {
     const authority = titan.authority_state || {};
     const authorityText = authority.rescue_charges !== undefined ? `门径救援额度 ${authority.rescue_charges}`
+      : authority.storm_burden !== undefined ? `天空预警 ${authority.warnings_issued || 0} · 风暴负担 ${authority.storm_burden} · 治愈 ${authority.healing_used ? "已使用" : "待命"}`
       : authority.bonded_region_id ? `守土绑定 ${authority.bonded_region_id} · 土地负担 ${authority.land_burden || 0}`
       : authority.bound_organization_id !== undefined ? `律法刚性 ${authority.rigidity || 0} · 绑定组织 ${authority.bound_organization_id || "无"}`
       : authority.weave_count !== undefined ? `浪漫织结 ${authority.weave_count} · 情感负担 ${authority.emotional_burden || 0}`
@@ -153,10 +154,11 @@ async function showPerson(personId) {
     : "瑟希斯四证：尚未参加";
   const flameTrials = [
     reasonExam,
+    person.trial_evidence?.aquila !== undefined ? `艾格勒通道：${person.trial_evidence.aquila}/5 次风暴守护` : "艾格勒通道：尚未开始",
     person.trial_evidence?.talanton !== undefined ? `塔兰顿守律：${person.trial_evidence.talanton}/5 次危机中的自我约束` : "塔兰顿守律：尚未立律",
     person.trial_evidence?.mnestia !== undefined ? `墨涅塔编织：${person.trial_evidence.mnestia}/3 段相互承认的关系` : "墨涅塔编织：尚未织结",
   ].join("<br>");
-  byId("person-detail").innerHTML = `<strong>${person.name}</strong><p>${person.region_name} · ${person.age} 岁 · ${stageNames[person.life_stage]} · ${organization}</p><p>${fate}</p><p>亲属：${parents}</p><p>主导因子：${factorNames[person.dominant_factor]} · 世界影响 ${person.world_impact}</p><p>候选人特质：${traits}</p><p>人生痕迹：${lifeTraces}</p><p>${flameTrials}</p><p>泰坦关系：${titanRelations}</p><p>影响来源：${reasons}</p><ul>${relationships}</ul>`;
+  byId("person-detail").innerHTML = `<strong>${person.name}</strong><p>${person.region_name} · ${person.age} 岁 · ${stageNames[person.life_stage]} · ${organization}</p><p>出身：${person.origin_region_name}</p><p>${fate}</p><p>亲属：${parents}</p><p>主导因子：${factorNames[person.dominant_factor]} · 世界影响 ${person.world_impact}</p><p>候选人特质：${traits}</p><p>人生痕迹：${lifeTraces}</p><p>${flameTrials}</p><p>泰坦关系：${titanRelations}</p><p>影响来源：${reasons}</p><ul>${relationships}</ul>`;
   document.querySelectorAll("[data-person-id]").forEach((card) => card.classList.toggle("selected", card.dataset.personId === personId));
 }
 
