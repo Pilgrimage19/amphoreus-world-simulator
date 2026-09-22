@@ -3,6 +3,16 @@ const stageNames = {child: "儿童", youth: "青年", adult: "成人", elder: "�
 const factorNames = {destruction: "毁灭", remembrance: "记忆", erudition: "智识", harmony: "同谐", elation: "欢愉", nihility: "虚无", hunt: "巡猎", beauty: "纯美", preservation: "存护", equilibrium: "均衡", order: "秩序", permanence: "不朽"};
 const regionStatusNames = {stable: "稳定", strained: "承压", overwhelmed: "避难超载", endangered: "黑潮威胁", lost: "已失陷"};
 const coreflameStatusNames = {within_titan: "火种仍在泰坦", held: "火种已被承接", returned: "火种已归还创世涡心"};
+let actionInFlight = false;
+let selectedPersonId = null;
+let personRequestVersion = 0;
+let worldEnded = false;
+
+function updateControlState(ended = false) {
+  byId("step").disabled = actionInFlight || ended;
+  byId("advance").disabled = actionInFlight || ended;
+  byId("reset").disabled = actionInFlight;
+}
 
 function tideClass(value) {
   if (value >= 60) return "danger";
@@ -11,12 +21,12 @@ function tideClass(value) {
 }
 
 function render(state) {
+  worldEnded = Boolean(state.ended);
   const regions = Object.values(state.regions);
   const averageTide = Math.round(regions.reduce((sum, region) => sum + region.black_tide, 0) / regions.length);
   const worldStatus = state.ended ? (state.ending_summary || "世界历史已经结束") : "世界仍在演化";
   byId("subtitle").textContent = `种子 ${state.seed} · 第 ${state.year} 年 · ${worldStatus}`;
-  byId("step").disabled = state.ended;
-  byId("advance").disabled = state.ended;
+  updateControlState(state.ended);
   byId("metrics").innerHTML = [
     ["地区居民总数", state.population.total_civilians.toLocaleString()],
     ["独立人物样本", state.population.alive_individuals],
@@ -105,10 +115,24 @@ function render(state) {
       <p>${person.region_id} · ${person.death_year ? `第 ${person.death_year} 年离世` : "离世年份不明"}</p>
       <small>世界影响 ${person.world_impact} · ${person.death_cause || "死因未记录"}</small>
     </button>`).join("") || "<p class='empty'>尚无已故的重要人物。</p>";
+  if (selectedPersonId && factorPaths.some((person) => person.id === selectedPersonId)) {
+    showPerson(selectedPersonId);
+  } else if (selectedPersonId) {
+    clearPersonSelection();
+  }
 }
 
 async function showPerson(personId) {
-  const person = await request(`/api/person/${personId}`);
+  selectedPersonId = personId;
+  const requestVersion = ++personRequestVersion;
+  let person;
+  try {
+    person = await request(`/api/person/${personId}`);
+  } catch (error) {
+    if (requestVersion === personRequestVersion) byId("person-detail").textContent = error.message;
+    return;
+  }
+  if (requestVersion !== personRequestVersion || selectedPersonId !== personId) return;
   const relationships = person.relationship_details.slice(0, 8).map((relation) =>
     `<li>${relation.target_name} · ${relation.kind} · 信任 ${relation.trust}${relation.oath ? ` · 誓言：${relation.oath}` : ""}</li>`).join("") || "<li>暂无活跃关系</li>";
   const organization = person.organization ? `${person.organization.name}（${person.organization.kind}）` : "未加入组织";
@@ -136,31 +160,42 @@ async function showPerson(personId) {
   document.querySelectorAll("[data-person-id]").forEach((card) => card.classList.toggle("selected", card.dataset.personId === personId));
 }
 
+function clearPersonSelection() {
+  selectedPersonId = null;
+  personRequestVersion += 1;
+  byId("person-detail").textContent = "点击人物可查看其关系、誓言与组织。";
+  document.querySelectorAll("[data-person-id]").forEach((card) => card.classList.remove("selected"));
+}
+
 async function request(path, options = {}) {
   const response = await fetch(path, options);
   if (!response.ok) throw new Error("无法读取世界状态");
   return response.json();
 }
 
-byId("step").addEventListener("click", async () => {
-  byId("step").disabled = true;
-  try { render(await request("/api/step", {method: "POST"})); }
-  catch (error) {
-    byId("step").disabled = false;
+async function runWorldAction(path, options, clearSelection = false) {
+  if (actionInFlight) return;
+  actionInFlight = true;
+  updateControlState();
+  try {
+    const state = await request(path, options);
+    if (clearSelection) clearPersonSelection();
+    render(state);
+  } catch (error) {
     byId("subtitle").textContent = error.message;
+  } finally {
+    actionInFlight = false;
+    updateControlState(worldEnded);
   }
-});
-byId("advance").addEventListener("click", async () => {
-  byId("advance").disabled = true;
-  try { render(await request("/api/advance", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({years: 10})})); }
-  catch (error) {
-    byId("advance").disabled = false;
-    byId("subtitle").textContent = error.message;
-  }
-});
-byId("reset").addEventListener("click", async () => {
-  render(await request("/api/reset", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({})}));
-});
+}
+
+byId("step").addEventListener("click", () => runWorldAction("/api/step", {method: "POST"}));
+byId("advance").addEventListener("click", () => runWorldAction("/api/advance", {
+  method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({years: 10}),
+}));
+byId("reset").addEventListener("click", () => runWorldAction("/api/reset", {
+  method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({}),
+}, true));
 document.addEventListener("click", (event) => {
   const card = event.target.closest("[data-person-id]");
   if (card) showPerson(card.dataset.personId);

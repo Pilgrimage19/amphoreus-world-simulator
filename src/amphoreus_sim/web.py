@@ -15,6 +15,7 @@ from .simulation import Simulation
 
 
 STATIC_DIR = Path(__file__).with_name("web")
+MAX_REQUEST_BODY_BYTES = 16_384
 
 
 class WorldServer(ThreadingHTTPServer):
@@ -64,32 +65,33 @@ class WorldServer(ThreadingHTTPServer):
             self.ending_summary = None
 
     def person_detail(self, person_id: str) -> dict[str, object] | None:
-        person = self.simulation.state.people.get(person_id)
-        if person is None:
-            return None
-        detail = person.snapshot()
-        detail["region_name"] = self.simulation.state.regions[person.region_id].name
-        detail["titan_relations"] = [
-            {
-                "id": titan_id,
-                "name": self.simulation.state.titans[titan_id].name,
-                "domain": self.simulation.state.titans[titan_id].domain,
-                "stance": stance,
-            }
-            for titan_id, stance in sorted(person.titan_stances.items(), key=lambda item: (-item[1], item[0]))
-            if titan_id in self.simulation.state.titans
-        ]
-        organization = self.simulation.state.organizations.get(person.organization_id or "")
-        detail["organization"] = organization.snapshot() if organization else None
-        detail["parents"] = [
-            {"id": parent_id, "name": self.simulation.state.people[parent_id].name}
-            for parent_id in person.parent_ids if parent_id in self.simulation.state.people
-        ]
-        detail["relationship_details"] = [
-            {**relation.snapshot(), "target_name": self.simulation.state.people[relation.target_id].name}
-            for relation in person.relations.values() if relation.target_id in self.simulation.state.people
-        ]
-        return detail
+        with self._world_lock:
+            person = self.simulation.state.people.get(person_id)
+            if person is None:
+                return None
+            detail = person.snapshot()
+            detail["region_name"] = self.simulation.state.regions[person.region_id].name
+            detail["titan_relations"] = [
+                {
+                    "id": titan_id,
+                    "name": self.simulation.state.titans[titan_id].name,
+                    "domain": self.simulation.state.titans[titan_id].domain,
+                    "stance": stance,
+                }
+                for titan_id, stance in sorted(person.titan_stances.items(), key=lambda item: (-item[1], item[0]))
+                if titan_id in self.simulation.state.titans
+            ]
+            organization = self.simulation.state.organizations.get(person.organization_id or "")
+            detail["organization"] = organization.snapshot() if organization else None
+            detail["parents"] = [
+                {"id": parent_id, "name": self.simulation.state.people[parent_id].name}
+                for parent_id in person.parent_ids if parent_id in self.simulation.state.people
+            ]
+            detail["relationship_details"] = [
+                {**relation.snapshot(), "target_name": self.simulation.state.people[relation.target_id].name}
+                for relation in person.relations.values() if relation.target_id in self.simulation.state.people
+            ]
+            return detail
 
 
 class WorldRequestHandler(BaseHTTPRequestHandler):
@@ -120,29 +122,60 @@ class WorldRequestHandler(BaseHTTPRequestHandler):
             self.server.advance()
             self._json(self.server.snapshot())
         elif path == "/api/advance":
-            years = self._body().get("years", 10)
-            years = years if isinstance(years, int) else 10
+            body = self._body()
+            if body is None:
+                return
+            years = body.get("years", 10)
+            if not isinstance(years, int) or isinstance(years, bool):
+                self._json_error(HTTPStatus.BAD_REQUEST, "years 必须是整数")
+                return
             self.server.advance(max(1, min(100, years)))
             self._json(self.server.snapshot())
         elif path == "/api/reset":
             body = self._body()
-            self.server.reset(body.get("seed"))
+            if body is None:
+                return
+            seed = body.get("seed")
+            if seed is not None and (not isinstance(seed, int) or isinstance(seed, bool)):
+                self._json_error(HTTPStatus.BAD_REQUEST, "seed 必须是整数")
+                return
+            self.server.reset(seed)
             self._json(self.server.snapshot())
         else:
             self.send_error(HTTPStatus.NOT_FOUND)
 
-    def _body(self) -> dict[str, object]:
-        length = int(self.headers.get("Content-Length", 0))
+    def _body(self) -> dict[str, object] | None:
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+        except ValueError:
+            self._json_error(HTTPStatus.BAD_REQUEST, "Content-Length 无效")
+            return None
+        if length < 0 or length > MAX_REQUEST_BODY_BYTES:
+            self._json_error(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "请求体过大")
+            return None
         if not length:
             return {}
         try:
-            return json.loads(self.rfile.read(length))
-        except json.JSONDecodeError:
-            return {}
+            body = json.loads(self.rfile.read(length))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            self._json_error(HTTPStatus.BAD_REQUEST, "请求体不是有效 JSON")
+            return None
+        if not isinstance(body, dict):
+            self._json_error(HTTPStatus.BAD_REQUEST, "请求体必须是 JSON 对象")
+            return None
+        return body
 
     def _json(self, payload: dict[str, object]) -> None:
         encoded = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(encoded)))
+        self.end_headers()
+        self.wfile.write(encoded)
+
+    def _json_error(self, status: HTTPStatus, message: str) -> None:
+        encoded = json.dumps({"error": message}, ensure_ascii=False).encode("utf-8")
+        self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(encoded)))
         self.end_headers()
