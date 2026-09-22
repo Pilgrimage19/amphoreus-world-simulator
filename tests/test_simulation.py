@@ -16,6 +16,27 @@ class SimulationTests(unittest.TestCase):
         self.assertEqual(len(simulation.state.titans), 12)
         self.assertEqual(set(simulation.state.people["tribios"].factors), set(Factor))
 
+    def test_six_held_fires_do_not_prematurely_end_the_world(self) -> None:
+        simulation = Simulation(42, population=100)
+        holder = simulation.state.people["person-0001"]
+        for titan in list(simulation.state.titans.values())[:6]:
+            titan.coreflame_status = "held"
+            titan.coreflame_holder = holder.id
+
+        self.assertIsNone(simulation._check_ending())
+
+    def test_recreation_requires_eleven_returned_fires_and_the_worldbearer(self) -> None:
+        simulation = Simulation(42, population=100)
+        for titan_id, titan in simulation.state.titans.items():
+            if titan_id == "kephale":
+                titan.coreflame_status = "held"
+                titan.coreflame_holder = "person-0001"
+            else:
+                titan.coreflame_status = "returned"
+                titan.coreflame_holder = None
+
+        self.assertIs(simulation._check_ending(), EndingKind.RECREATION_READY)
+
     def test_regions_have_mixed_titan_faiths_and_people_have_stances(self) -> None:
         simulation = Simulation(42, population=100)
         janusopolis = simulation.state.regions["janusopolis"]
@@ -545,6 +566,99 @@ class SimulationTests(unittest.TestCase):
         self.assertEqual(threatened.defense, 5)
         self.assertEqual(aquila.authority_state["warnings_issued"], 1)
         self.assertEqual(aquila.authority_state["storm_burden"], 1)
+
+    def test_ocean_trial_requires_low_empathy_and_five_polluted_sea_passages(self) -> None:
+        simulation = Simulation(42, population=100)
+        for person in simulation.state.people.values():
+            person.golden_status = "ordinary"
+        candidate = simulation.state.people["person-0001"]
+        candidate.age, candidate.golden_status = 25, "awakened"
+        candidate.region_id, candidate.empathy = "styxia", 30
+        for factor in Factor:
+            candidate.factors[factor] = 20
+        candidate.factors[Factor.NIHILITY] = 90
+        styxia = simulation.state.regions["styxia"]
+        styxia.black_tide = 40
+
+        for year in range(50, 55):
+            simulation.state.year = year
+            simulation._record_ocean_passage(candidate, styxia, "aid")
+        for year in range(55, 70):
+            simulation.state.year = year
+            simulation._resolve_ocean_trial()
+
+        phagousa = simulation.state.titans["phagousa"]
+        self.assertEqual(candidate.trial_evidence["phagousa"], 5)
+        self.assertEqual(phagousa.coreflame_holder, candidate.id)
+        self.assertEqual(phagousa.authority_state["anchor_id"], "")
+
+        rejected = simulation.state.people["person-0002"]
+        rejected.age, rejected.golden_status, rejected.empathy = 25, "awakened", 36
+        for factor in Factor:
+            rejected.factors[factor] = 20
+        rejected.factors[Factor.NIHILITY] = 90
+        self.assertFalse(simulation._is_ocean_candidate(rejected))
+
+    def test_ocean_authority_chooses_non_worldbearer_anchor_and_opens_route(self) -> None:
+        simulation = Simulation(42, population=100)
+        holder = simulation.state.people["person-0001"]
+        holder.region_id = "styxia"
+        ocean = simulation.state.titans["phagousa"]
+        ocean.authority_state = {"anchor_id": "", "voyages": 0, "pollution_burden": 0}
+        simulation._inherit_coreflame(ocean, holder, "测试海洋试炼")
+
+        worldbearer = simulation.state.people["tribios"]
+        simulation.state.titans["kephale"].coreflame_holder = worldbearer.id
+        anchor = simulation.state.people["person-0002"]
+        anchor.golden_status = "demigod"
+        anchor.coreflames.append("aquila")
+        simulation.state.titans["aquila"].coreflame_holder = anchor.id
+        simulation.state.titans["aquila"].coreflame_status = "held"
+
+        styxia = simulation.state.regions["styxia"]
+        okhema = simulation.state.regions["okhema"]
+        styxia.black_tide, styxia.tide_source, styxia.population = 70, 30, 10_000
+        okhema.black_tide, okhema.population, okhema.food = 10, 1_000, 10_000
+        simulation.state.year = 60
+        simulation._resolve_ocean_authority()
+
+        self.assertEqual(ocean.authority_state["anchor_id"], anchor.id)
+        self.assertEqual(holder.relations[anchor.id].kind, "唯一羁绊")
+        self.assertEqual(anchor.relations[holder.id].oath, "污海同行")
+        self.assertEqual(ocean.authority_state["voyages"], 1)
+        self.assertEqual(ocean.authority_state["pollution_burden"], 1)
+        self.assertLess(styxia.population, 10_000)
+        self.assertGreater(okhema.population, 1_000)
+
+    def test_ocean_holder_follows_anchor_only_after_anchor_returns_a_fire(self) -> None:
+        simulation = Simulation(42, population=100)
+        ocean_holder = simulation.state.people["person-0001"]
+        ocean = simulation.state.titans["phagousa"]
+        ocean.authority_state = {"anchor_id": "tribios", "voyages": 0, "pollution_burden": 0}
+        simulation._inherit_coreflame(ocean, ocean_holder, "测试海洋试炼")
+        anchor = simulation.state.people["tribios"]
+        okhema = simulation.state.regions["okhema"]
+        source_before = okhema.tide_source
+
+        simulation._return_coreflame(simulation.state.titans["janus"], anchor, "测试主动献祭")
+
+        self.assertEqual(ocean.coreflame_status, "returned")
+        self.assertFalse(ocean_holder.alive)
+        self.assertIn("phagousa", ocean_holder.returned_coreflames)
+        self.assertEqual(okhema.tide_source, max(0, source_before - 2))
+        self.assertTrue(any(event.type == "ocean_anchor_sacrifice" for event in simulation.state.events))
+
+    def test_ocean_holder_does_not_follow_an_ordinary_anchor_death(self) -> None:
+        simulation = Simulation(42, population=100)
+        ocean_holder = simulation.state.people["person-0001"]
+        ocean = simulation.state.titans["phagousa"]
+        ocean.authority_state = {"anchor_id": "tribios", "voyages": 0, "pollution_burden": 0}
+        simulation._inherit_coreflame(ocean, ocean_holder, "测试海洋试炼")
+
+        simulation._record_death(simulation.state.people["tribios"], "测试普通死亡")
+
+        self.assertEqual(ocean.coreflame_status, "held")
+        self.assertTrue(ocean_holder.alive)
 
     def test_sky_healing_prevents_okhemas_first_irreversible_fall(self) -> None:
         simulation = Simulation(42, population=100)

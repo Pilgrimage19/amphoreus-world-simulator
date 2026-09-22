@@ -36,6 +36,8 @@ def run_audit(seed: int, ticks: int = 1_000, population: int = 1_000) -> dict[st
         for region_id, count in lost_counts.items() if count > 1
     )
     for titan_id, years in returned.items():
+        if len(years) > 1:
+            anomalies.append(f"火种 {titan_id} 被重复记录归还 {len(years)} 次")
         if years and not inherited[titan_id] and titan_id != "janus":
             anomalies.append(f"火种 {titan_id} 有归还记录但没有承接记录")
         if years and inherited[titan_id] and min(years) < min(inherited[titan_id]):

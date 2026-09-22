@@ -69,6 +69,7 @@ function render(state) {
     const authority = titan.authority_state || {};
     const authorityText = authority.rescue_charges !== undefined ? `门径救援额度 ${authority.rescue_charges}`
       : authority.storm_burden !== undefined ? `天空预警 ${authority.warnings_issued || 0} · 风暴负担 ${authority.storm_burden} · 治愈 ${authority.healing_used ? "已使用" : "待命"}`
+      : authority.anchor_id !== undefined ? `海洋羁绊 ${authority.anchor_id || "尚未相遇"} · 航行 ${authority.voyages || 0} · 污染负担 ${authority.pollution_burden || 0}`
       : authority.bonded_region_id ? `守土绑定 ${authority.bonded_region_id} · 土地负担 ${authority.land_burden || 0}`
       : authority.bound_organization_id !== undefined ? `律法刚性 ${authority.rigidity || 0} · 绑定组织 ${authority.bound_organization_id || "无"}`
       : authority.weave_count !== undefined ? `浪漫织结 ${authority.weave_count} · 情感负担 ${authority.emotional_burden || 0}`
@@ -155,6 +156,7 @@ async function showPerson(personId) {
   const flameTrials = [
     reasonExam,
     person.trial_evidence?.aquila !== undefined ? `艾格勒通道：${person.trial_evidence.aquila}/5 次风暴守护` : "艾格勒通道：尚未开始",
+    person.trial_evidence?.phagousa !== undefined ? `法古萨引航：${person.trial_evidence.phagousa}/5 次污海引航` : "法古萨引航：尚未开始",
     person.trial_evidence?.talanton !== undefined ? `塔兰顿守律：${person.trial_evidence.talanton}/5 次危机中的自我约束` : "塔兰顿守律：尚未立律",
     person.trial_evidence?.mnestia !== undefined ? `墨涅塔编织：${person.trial_evidence.mnestia}/3 段相互承认的关系` : "墨涅塔编织：尚未织结",
   ].join("<br>");

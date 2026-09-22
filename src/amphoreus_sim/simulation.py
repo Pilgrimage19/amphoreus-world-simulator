@@ -32,6 +32,7 @@ LAW_STEWARDSHIP_YEARS = 5
 ROMANCE_WEAVES_REQUIRED = 3
 ROMANCE_SACRIFICE_WEAVES = 6
 SKY_PASSAGES_REQUIRED = 5
+OCEAN_PASSAGES_REQUIRED = 5
 
 TITAN_DATA = (
     ("aquila", "艾格勒", "天空", Factor.PRESERVATION, "支柱", "skyward"),
@@ -257,6 +258,7 @@ class Simulation:
         self._resolve_organizations()
         self._resolve_coreflame_trials()
         self._resolve_sky_authority()
+        self._resolve_ocean_authority()
         self._resolve_earth_authority()
         self._resolve_law_authority()
         self._resolve_romance_authority()
@@ -741,6 +743,7 @@ class Simulation:
             self._record_earth_stewardship(person, region, action)
             self._resolve_relationships(person, action)
             self._record_sky_passage(person, region, action)
+            self._record_ocean_passage(person, region, action)
             self._record_law_stewardship(person, region, action)
             self._record_romance_weaving(person, region, action)
             self._form_social_ties(person)
@@ -862,6 +865,11 @@ class Simulation:
         if self._is_sky_candidate(person) and region.black_tide >= 25:
             weights["aid"] += 30
             weights["organize"] += 18
+        if self._is_ocean_candidate(person) and region.id == "styxia" and region.black_tide >= 25:
+            # Phagousa answers detached people who nevertheless choose to
+            # guide others through the polluted sea rather than withdraw.
+            weights["aid"] += 36
+            weights["flee"] += 12
         if self._is_law_candidate(person) and (region.tension >= 25 or region.black_tide >= 25):
             weights["organize"] += 30
             weights["aid"] += 10
@@ -990,6 +998,23 @@ class Simulation:
         if previous < SKY_PASSAGES_REQUIRED == evidence:
             self._emit("sky_trial_ready", f"{person.name}五次守住风暴中的避难通道，艾格勒的血脉试炼开始回应。", (f"person:{person.id}:sky_passage"), ("trial:aquila:ready",), (person.id,))
 
+    def _record_ocean_passage(self, person: Person, region: Region, action: str) -> None:
+        """Record a detached guide repeatedly leading people through Styxia's polluted sea."""
+        if (not self._is_ocean_candidate(person) or self.state.year < 50
+                or region.id != "styxia" or region.status == "lost"
+                or region.black_tide < 25 or action not in {"aid", "flee"}):
+            return
+        if "phagousa_passage_started" not in person.memories:
+            person.memories.append("phagousa_passage_started")
+            self._emit("ocean_trial_started", f"{person.name}在斯缇科西亚的污海中第一次为陌生人引航。", ("factor:nihility", "region:styxia:black_tide"), ("trial:phagousa:started",), (person.id,))
+        previous = person.trial_evidence.get("phagousa", 0)
+        evidence = min(OCEAN_PASSAGES_REQUIRED, previous + 1)
+        person.trial_evidence["phagousa"] = evidence
+        self._record_life_trace(person, "guardianship", responsibility=1)
+        self._credit_impact(person, 1, "在斯缇科西亚的污海中为幸存者引航")
+        if previous < OCEAN_PASSAGES_REQUIRED == evidence:
+            self._emit("ocean_trial_ready", f"{person.name}五次穿过污海引导幸存者，法古萨的试炼开始回应。", (f"person:{person.id}:ocean_passage",), ("trial:phagousa:ready",), (person.id,))
+
     def _record_law_stewardship(self, person: Person, region: Region, action: str) -> None:
         """Talanton answers to a rule freely kept when keeping it is difficult."""
         if not self._is_law_candidate(person) or region.status == "lost":
@@ -1072,6 +1097,15 @@ class Simulation:
             and person.origin_region_id == "skyward"
             and self._matches_coreflame_factor(person, self.state.titans["aquila"])
             and (person.life_stage() == "adult" or "aquila_passage_started" in person.memories)
+        )
+
+    def _is_ocean_candidate(self, person: Person) -> bool:
+        return (
+            person.alive
+            and person.golden_status == "awakened"
+            and person.empathy <= 35
+            and self._matches_coreflame_factor(person, self.state.titans["phagousa"])
+            and (person.life_stage() == "adult" or "phagousa_passage_started" in person.memories)
         )
 
     def _is_law_candidate(self, person: Person) -> bool:
@@ -1333,6 +1367,7 @@ class Simulation:
     def _resolve_coreflame_trials(self) -> None:
         """Resolve the implemented trials; a fire is never granted from a stat alone."""
         self._resolve_sky_trial()
+        self._resolve_ocean_trial()
         self._resolve_earth_trial()
         self._resolve_law_trial()
         self._resolve_romance_trial()
@@ -1389,6 +1424,30 @@ class Simulation:
         if titan.trial_progress >= 100:
             titan.authority_state = {"storm_burden": 0, "warnings_issued": 0, "healing_used": 0}
             self._inherit_coreflame(titan, candidate, "高天血脉与避难通道试炼")
+
+    def _resolve_ocean_trial(self) -> None:
+        titan = self.state.titans["phagousa"]
+        if titan.coreflame_status != "within_titan":
+            return
+        candidates = [
+            person for person in self.state.people.values()
+            if self._is_ocean_candidate(person)
+            and person.trial_evidence.get("phagousa", 0) >= OCEAN_PASSAGES_REQUIRED
+            and self.state.regions[person.region_id].status != "lost"
+        ]
+        if not candidates:
+            titan.trial_progress = max(0, titan.trial_progress - 1)
+            return
+        candidate = max(candidates, key=lambda person: (
+            100 - person.empathy + person.adaptability + person.willpower
+            + person.life_traces.get("guardianship", 0) + person.world_impact,
+            person.id,
+        ))
+        titan.trial_progress = min(100, titan.trial_progress + 7)
+        self._credit_impact(candidate, 1, "推进法古萨的污海引航试炼")
+        if titan.trial_progress >= 100:
+            titan.authority_state = {"anchor_id": "", "voyages": 0, "pollution_burden": 0}
+            self._inherit_coreflame(titan, candidate, "污海引航与无情之心试炼")
 
     def _resolve_law_trial(self) -> None:
         titan = self.state.titans["talanton"]
@@ -1544,6 +1603,26 @@ class Simulation:
         titan.coreflame_status = "returned"
         titan.coreflame_returned_year = self.state.year
         self._emit("coreflame_returned", f"{holder.name}将{titan.name}的{titan.domain}火种归还创世涡心：{reason}。", (f"coreflame:{titan.id}:held"), (f"coreflame:{titan.id}:returned",), (holder.id,))
+        if titan.id != "phagousa":
+            self._follow_ocean_anchor_sacrifice(holder)
+
+    def _follow_ocean_anchor_sacrifice(self, anchor: Person) -> None:
+        """The Ocean holder follows only when their chosen demi-god returns a fire."""
+        ocean = self.state.titans["phagousa"]
+        if (ocean.coreflame_status != "held" or ocean.coreflame_holder is None
+                or ocean.authority_state.get("anchor_id") != anchor.id):
+            return
+        holder = self.state.people.get(ocean.coreflame_holder)
+        if holder is None or not holder.alive or holder.id == anchor.id:
+            return
+        for region in self.state.regions.values():
+            if region.status == "lost":
+                continue
+            region.tide_source = max(0, region.tide_source - 2)
+            region.black_tide = max(region.tide_source, region.black_tide - 2)
+        self._return_coreflame(ocean, holder, f"唯一羁绊{anchor.name}主动献祭后，选择与其同行")
+        self._record_death(holder, f"唯一羁绊{anchor.name}献祭后，随其归还海洋火种")
+        self._emit("ocean_anchor_sacrifice", f"{anchor.name}主动献祭后，{holder.name}循唯一羁绊而去，与海洋火种一同归还；幸存城邦的黑潮残留源随之减弱。", (f"person:{anchor.id}:sacrifice", "coreflame:phagousa"), ("sacrifice:phagousa:followed_anchor", "black_tide_sources:reduced"), (anchor.id, holder.id))
 
     def _resolve_gate_authority(self) -> None:
         """Janus opens a final route for an awakened person stranded while fleeing."""
@@ -1598,6 +1677,69 @@ class Simulation:
         if self.state.year % 5 == 0:
             defense_gain = region.defense - before_defense
             self._emit("sky_warning", f"{holder.name}预见{region.name}上空的黑潮风暴，提前维持避难通道与防线。", ("coreflame:aquila", f"black_tide:{region.id}"), (f"defense:{region.id}:+{defense_gain}", "authority:aquila:warning"), (holder.id,))
+
+    def _resolve_ocean_authority(self) -> None:
+        """Phagousa creates sea routes and binds its holder to one non-Worldbearer demi-god."""
+        titan = self.state.titans["phagousa"]
+        if titan.coreflame_status != "held" or titan.coreflame_holder is None:
+            return
+        holder = self.state.people.get(titan.coreflame_holder)
+        if holder is None or not holder.alive:
+            return
+
+        anchor_id = str(titan.authority_state.get("anchor_id", ""))
+        if not anchor_id:
+            worldbearer_id = self.state.titans["kephale"].coreflame_holder
+            candidates = [
+                person for person in self.state.people.values()
+                if person.alive and person.id != holder.id and person.id != worldbearer_id
+                and person.golden_status == "demigod" and bool(person.coreflames)
+            ]
+            if candidates:
+                anchor = min(candidates, key=lambda person: (person.region_id != holder.region_id, person.id))
+                titan.authority_state["anchor_id"] = anchor.id
+                holder.relations[anchor.id] = Relation(anchor.id, "唯一羁绊", 70, oath="污海同行", last_interaction_year=self.state.year)
+                anchor.relations[holder.id] = Relation(holder.id, "唯一羁绊", 70, oath="污海同行", last_interaction_year=self.state.year)
+                self._emit("ocean_anchor", f"{holder.name}第一次真正看见了{anchor.name}，并将这名半神视作唯一羁绊。", ("coreflame:phagousa", f"person:{anchor.id}:demigod"), (f"relation:{holder.id}:{anchor.id}:unique_anchor",), (holder.id, anchor.id))
+
+        if self.state.year % 3 != 0:
+            return
+        sources = [
+            region for region in self.state.regions.values()
+            if region.status != "lost" and region.black_tide >= 35 and region.population > 0
+        ]
+        if not sources:
+            return
+        source = max(sources, key=lambda region: (region.black_tide, region.population, region.id))
+        destinations = [
+            region for region in self.state.regions.values()
+            if region.id != source.id and region.status != "lost"
+            and region.black_tide < source.black_tide
+            and region.population < region.refuge_capacity * 9 // 10
+        ]
+        if not destinations:
+            return
+        destination = min(destinations, key=lambda region: (region.black_tide, region.population / max(1, region.refuge_capacity), region.id))
+        safe_space = max(0, destination.refuge_capacity * 9 // 10 - destination.population)
+        passengers = min(source.population, safe_space, 120, max(20, source.population // 500))
+        if passengers <= 0:
+            return
+        source.population -= passengers
+        destination.population += passengers
+
+        supplies = min(40, max(0, destination.food - destination.population // 5))
+        destination.food -= supplies
+        source.food += supplies
+        if source.black_tide > source.tide_source:
+            source.black_tide -= 1
+        burden_region = self.state.regions.get(holder.region_id)
+        if burden_region is not None and burden_region.id != source.id and burden_region.status != "lost":
+            burden_region.black_tide = min(100, burden_region.black_tide + 1)
+        titan.authority_state["voyages"] = int(titan.authority_state.get("voyages", 0)) + 1
+        titan.authority_state["pollution_burden"] = int(titan.authority_state.get("pollution_burden", 0)) + 1
+        holder.health = max(1, holder.health - 1)
+        self._credit_impact(holder, 2, f"开辟从{source.name}到{destination.name}的污海航路")
+        self._emit("ocean_voyage", f"{holder.name}开辟污海航路，将{passengers}名居民从{source.name}送往{destination.name}，并逆向运回{supplies}份补给。", ("coreflame:phagousa", f"black_tide:{source.id}"), (f"population:{source.id}:-{passengers}", f"population:{destination.id}:+{passengers}", "authority:phagousa:pollution_transfer"), (holder.id,))
 
     def _trigger_sky_healing(self, region: Region) -> bool:
         """Spend Aquila once to cancel Okhema's otherwise irreversible fall."""
@@ -1856,9 +1998,18 @@ class Simulation:
         if all(region.status == "lost" for region in self.state.regions.values()):
             self._emit("collapse", "所有城邦均已失陷，幸存者失去维持文明的共同根基。", (), ("world:collapse",))
             return EndingKind.COLLAPSE
-        claimed_fires = sum(t.coreflame_holder is not None for t in self.state.titans.values())
-        if claimed_fires >= 6:
-            self._emit("recreation_ready", "足够多的火种已被承接；世界获得尝试再创世的资格。", (), ("world:recreation_ready",))
+        # Re-creation is not a collection threshold. The ten ordinary fires
+        # must have been returned, Oronyx must return penultimately, and only
+        # then may the Worldbearer hold Kephale as the final fire.
+        other_fires_returned = all(
+            titan.coreflame_status == "returned"
+            for titan_id, titan in self.state.titans.items()
+            if titan_id != "kephale"
+        )
+        worldbearer = self.state.titans["kephale"]
+        if (other_fires_returned and worldbearer.coreflame_status == "held"
+                and worldbearer.coreflame_holder is not None):
+            self._emit("recreation_ready", "十一枚火种已经归还；负世者承担全部火种与旧世界，再创世准备完成。", ("coreflames:eleven:returned", "coreflame:kephale:held"), ("world:recreation_ready",))
             return EndingKind.RECREATION_READY
         return None
 
