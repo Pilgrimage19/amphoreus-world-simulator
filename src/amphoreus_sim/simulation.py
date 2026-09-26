@@ -33,6 +33,7 @@ ROMANCE_WEAVES_REQUIRED = 3
 ROMANCE_SACRIFICE_WEAVES = 6
 SKY_PASSAGES_REQUIRED = 5
 OCEAN_PASSAGES_REQUIRED = 5
+TRICKERY_EXPOSURES_REQUIRED = 5
 
 TITAN_DATA = (
     ("aquila", "艾格勒", "天空", Factor.PRESERVATION, "支柱", "skyward"),
@@ -260,6 +261,7 @@ class Simulation:
         self._resolve_sky_authority()
         self._resolve_ocean_authority()
         self._resolve_earth_authority()
+        self._resolve_trickery_authority()
         self._resolve_law_authority()
         self._resolve_romance_authority()
         self._resolve_reason_authority()
@@ -744,6 +746,7 @@ class Simulation:
             self._resolve_relationships(person, action)
             self._record_sky_passage(person, region, action)
             self._record_ocean_passage(person, region, action)
+            self._record_trickery_truth(person, region, action)
             self._record_law_stewardship(person, region, action)
             self._record_romance_weaving(person, region, action)
             self._form_social_ties(person)
@@ -870,6 +873,17 @@ class Simulation:
             # guide others through the polluted sea rather than withdraw.
             weights["aid"] += 36
             weights["flee"] += 12
+        if self._is_trickery_candidate(person) and self._trickery_power_network(region):
+            stage = person.trial_evidence.get("zagreus", 0)
+            if stage == 0:
+                weights["organize"] += 24
+                weights["conflict"] += 16
+            elif stage == 1:
+                weights["study"] += 32
+                weights["seek"] += 20
+            elif stage == 2:
+                weights["aid"] += 26
+                weights["organize"] += 26
         if self._is_law_candidate(person) and (region.tension >= 25 or region.black_tide >= 25):
             weights["organize"] += 30
             weights["aid"] += 10
@@ -1015,6 +1029,36 @@ class Simulation:
         if previous < OCEAN_PASSAGES_REQUIRED == evidence:
             self._emit("ocean_trial_ready", f"{person.name}五次穿过污海引导幸存者，法古萨的试炼开始回应。", (f"person:{person.id}:ocean_passage",), ("trial:phagousa:ready",), (person.id,))
 
+    def _record_trickery_truth(self, person: Person, region: Region, action: str) -> None:
+        """Advance the three irreversible acts of Zagreus's Last Lie trial."""
+        if (not self._is_trickery_candidate(person) or self.state.year < 50
+                or region.status == "lost" or not self._trickery_power_network(region)):
+            return
+        stage = person.trial_evidence.get("zagreus", 0)
+        if stage == 0 and action in {"organize", "conflict"}:
+            person.trial_evidence["zagreus"] = 1
+            person.memories.append("zagreus_mask_created")
+            self._record_life_trace(person, "betrayal")
+            self._emit("trickery_mask_created", f"{person.name}在{region.name}的权力网中编造身份，以一张面具换取接近秘密的资格。", ("factor:elation", f"organization_network:{region.id}"), ("trial:zagreus:mask",), (person.id,))
+            return
+        if stage == 1 and action in {"study", "seek"} and person.insight + person.adaptability >= 90:
+            person.trial_evidence["zagreus"] = 2
+            person.memories.append("zagreus_conspiracy_exposed")
+            self._credit_impact(person, 4, f"揭露{region.name}权力网中的阴谋")
+            self._emit("trickery_conspiracy_exposed", f"{person.name}借面具进入权力网，随后公开了{region.name}被掩藏的阴谋。", ("trial:zagreus:mask",), ("trial:zagreus:conspiracy_exposed",), (person.id,))
+            return
+        if stage == 2 and action in {"aid", "organize"}:
+            person.trial_evidence["zagreus"] = 3
+            person.memories.append("zagreus_lie_confessed")
+            self._record_life_trace(person, "oath", responsibility=1)
+            for relation in person.relations.values():
+                relation.trust = max(-100, relation.trust - 15)
+                counterpart = self.state.people.get(relation.target_id)
+                if counterpart is not None and person.id in counterpart.relations:
+                    counterpart.relations[person.id].trust = max(-100, counterpart.relations[person.id].trust - 15)
+            self._credit_impact(person, 6, "公开坦白自己为接近权力而编造的最大谎言")
+            self._emit("trickery_lie_confessed", f"{person.name}没有用新谎言掩盖旧谎言，而是公开交出面具并承担信任破裂的代价。", ("trial:zagreus:conspiracy_exposed",), ("trial:zagreus:ready", "relations:trust:damaged"), (person.id,))
+
     def _record_law_stewardship(self, person: Person, region: Region, action: str) -> None:
         """Talanton answers to a rule freely kept when keeping it is difficult."""
         if not self._is_law_candidate(person) or region.status == "lost":
@@ -1106,6 +1150,24 @@ class Simulation:
             and person.empathy <= 35
             and self._matches_coreflame_factor(person, self.state.titans["phagousa"])
             and (person.life_stage() == "adult" or "phagousa_passage_started" in person.memories)
+        )
+
+    def _is_trickery_candidate(self, person: Person) -> bool:
+        return (
+            person.alive
+            and person.golden_status == "awakened"
+            and self._matches_coreflame_factor(person, self.state.titans["zagreus"])
+            and (person.life_stage() == "adult" or person.trial_evidence.get("zagreus", 0) > 0)
+        )
+
+    def _trickery_power_network(self, region: Region) -> bool:
+        return (
+            region.tension >= 25
+            and any(
+                organization.region_id == region.id and organization.influence >= 10
+                and bool(organization.member_ids)
+                for organization in self.state.organizations.values()
+            )
         )
 
     def _is_law_candidate(self, person: Person) -> bool:
@@ -1369,6 +1431,7 @@ class Simulation:
         self._resolve_sky_trial()
         self._resolve_ocean_trial()
         self._resolve_earth_trial()
+        self._resolve_trickery_trial()
         self._resolve_law_trial()
         self._resolve_romance_trial()
         self._resolve_reason_trial()
@@ -1448,6 +1511,30 @@ class Simulation:
         if titan.trial_progress >= 100:
             titan.authority_state = {"anchor_id": "", "voyages": 0, "pollution_burden": 0}
             self._inherit_coreflame(titan, candidate, "污海引航与无情之心试炼")
+
+    def _resolve_trickery_trial(self) -> None:
+        titan = self.state.titans["zagreus"]
+        if titan.coreflame_status != "within_titan":
+            return
+        candidates = [
+            person for person in self.state.people.values()
+            if self._is_trickery_candidate(person)
+            and person.trial_evidence.get("zagreus", 0) >= 3
+            and self.state.regions[person.region_id].status != "lost"
+        ]
+        if not candidates:
+            titan.trial_progress = max(0, titan.trial_progress - 1)
+            return
+        candidate = max(candidates, key=lambda person: (
+            person.insight + person.adaptability + person.courage
+            + person.life_traces.get("betrayal", 0) + person.world_impact,
+            person.id,
+        ))
+        titan.trial_progress = min(100, titan.trial_progress + 8)
+        self._credit_impact(candidate, 1, "推进扎格列斯的最后谎言试炼")
+        if titan.trial_progress >= 100:
+            titan.authority_state = {"exposed_organization_ids": [], "mask_burden": 0}
+            self._inherit_coreflame(titan, candidate, "揭露阴谋并坦白最后的谎言")
 
     def _resolve_law_trial(self) -> None:
         titan = self.state.titans["talanton"]
@@ -1794,6 +1881,52 @@ class Simulation:
                 and self.state.regions["okhema"].status != "lost"
                 and "georios_foundation" not in self.state.regions):
             self._found_earth_foundation(holder, titan)
+
+    def _resolve_trickery_authority(self) -> None:
+        """Zagreus exposes institutions one by one, while the holder loses their masks."""
+        titan = self.state.titans["zagreus"]
+        if titan.coreflame_status != "held" or titan.coreflame_holder is None:
+            return
+        holder = self.state.people.get(titan.coreflame_holder)
+        if holder is None or not holder.alive:
+            return
+        burden = int(titan.authority_state.get("mask_burden", 0)) + 1
+        titan.authority_state["mask_burden"] = burden
+        if burden % 5 == 0:
+            holder.social = max(0, holder.social - 1)
+            for relation in holder.relations.values():
+                relation.trust = max(-100, relation.trust - 1)
+        if self.state.year % 10 != 0:
+            return
+
+        exposed_ids = list(titan.authority_state.get("exposed_organization_ids", []))
+        candidates = [
+            organization for organization in self.state.organizations.values()
+            if organization.id not in exposed_ids and organization.member_ids
+            and self.state.regions[organization.region_id].status != "lost"
+        ]
+        if not candidates:
+            return
+        organization = max(candidates, key=lambda item: (item.influence, item.id))
+        exposed_ids.append(organization.id)
+        titan.authority_state["exposed_organization_ids"] = exposed_ids
+        influence_loss = min(15, organization.influence)
+        organization.influence -= influence_loss
+        region = self.state.regions[organization.region_id]
+        region.tension = max(0, region.tension - 5)
+        self._credit_impact(holder, 4, f"揭露{organization.name}内部被掩盖的权力秘密")
+        self._emit("trickery_authority_exposure", f"{holder.name}揭开{organization.name}用体面叙事遮掩的秘密；组织失去{influence_loss}点影响力。", ("coreflame:zagreus", f"organization:{organization.id}:secret"), (f"organization:{organization.id}:influence:-{influence_loss}", f"tension:{region.id}:-5"), (holder.id,))
+
+        if len(exposed_ids) < TRICKERY_EXPOSURES_REQUIRED:
+            return
+        for surviving_region in self.state.regions.values():
+            if surviving_region.status != "lost":
+                surviving_region.tension = max(0, surviving_region.tension - 5)
+        for other_titan in self.state.titans.values():
+            other_titan.corruption = max(0, other_titan.corruption - 5)
+        self._return_coreflame(titan, holder, "交出最后的面具与所有秘密，让旧世界的谎言可以被质疑")
+        self._record_death(holder, "以自身与诡计火种封存虚假叙事，为可被质疑的真实献祭")
+        self._emit("trickery_final_truth", f"{holder.name}交出最后的面具；五重权力秘密被公开，伪神与错误叙事失去庇护。", ("authority:zagreus:five_exposures",), ("false_histories:cleared", "titan_corruption:reduced"), (holder.id,))
 
     def _resolve_law_authority(self) -> None:
         """Talanton makes a city governable, while accumulated rigidity has a cost."""

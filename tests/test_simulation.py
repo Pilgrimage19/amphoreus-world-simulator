@@ -660,6 +660,60 @@ class SimulationTests(unittest.TestCase):
         self.assertEqual(ocean.coreflame_status, "held")
         self.assertTrue(ocean_holder.alive)
 
+    def test_trickery_trial_requires_mask_exposure_and_an_open_confession(self) -> None:
+        simulation = Simulation(42, population=100)
+        for person in simulation.state.people.values():
+            person.golden_status = "ordinary"
+        candidate = simulation.state.people["person-0001"]
+        candidate.age, candidate.golden_status = 25, "awakened"
+        candidate.region_id, candidate.insight, candidate.adaptability = "okhema", 70, 65
+        for factor in Factor:
+            candidate.factors[factor] = 20
+        candidate.factors[Factor.ELATION] = 90
+        region = simulation.state.regions["okhema"]
+        region.tension = 45
+        organization = simulation.state.organizations["okhema_council"]
+        organization.influence = 30
+        organization.member_ids.add(candidate.id)
+        candidate.organization_id = organization.id
+        trust_before = sum(relation.trust for relation in candidate.relations.values())
+        simulation.state.year = 50
+
+        simulation._record_trickery_truth(candidate, region, "organize")
+        simulation._record_trickery_truth(candidate, region, "study")
+        simulation._record_trickery_truth(candidate, region, "conflict")
+        self.assertEqual(candidate.trial_evidence["zagreus"], 2)
+        simulation._record_trickery_truth(candidate, region, "aid")
+        for _ in range(13):
+            simulation._resolve_trickery_trial()
+
+        zagreus = simulation.state.titans["zagreus"]
+        self.assertEqual(candidate.trial_evidence["zagreus"], 3)
+        self.assertLess(sum(relation.trust for relation in candidate.relations.values()), trust_before)
+        self.assertEqual(zagreus.coreflame_holder, candidate.id)
+        self.assertIn("zagreus_lie_confessed", candidate.memories)
+
+    def test_trickery_authority_exposes_five_organizations_then_returns_fire(self) -> None:
+        simulation = Simulation(42, population=100)
+        holder = simulation.state.people["person-0001"]
+        zagreus = simulation.state.titans["zagreus"]
+        zagreus.authority_state = {"exposed_organization_ids": [], "mask_burden": 0}
+        simulation._inherit_coreflame(zagreus, holder, "测试最后谎言")
+        for organization in simulation.state.organizations.values():
+            organization.influence = 40
+        aquila = simulation.state.titans["aquila"]
+        aquila.corruption = 20
+
+        for year in range(10, 60, 10):
+            simulation.state.year = year
+            simulation._resolve_trickery_authority()
+
+        self.assertEqual(len(zagreus.authority_state["exposed_organization_ids"]), 5)
+        self.assertEqual(zagreus.coreflame_status, "returned")
+        self.assertFalse(holder.alive)
+        self.assertEqual(aquila.corruption, 15)
+        self.assertTrue(any(event.type == "trickery_final_truth" for event in simulation.state.events))
+
     def test_sky_healing_prevents_okhemas_first_irreversible_fall(self) -> None:
         simulation = Simulation(42, population=100)
         holder = simulation.state.people["person-0001"]
