@@ -26,6 +26,17 @@ class FlamechaseTests(unittest.TestCase):
         self.assertEqual(self.sim.step(), EndingKind.COLLAPSE)
         self.assertEqual(before, self.sim.state_hash())
 
+    def test_a_new_relationship_is_not_formed_with_an_already_dead_person(self):
+        person = self.candidate(1, Factor.HARMONY)
+        dead = self.candidate(2, Factor.HARMONY)
+        dead.alive = False
+        person.relations.clear()
+        self.sim._people_by_region = {"okhema": [person, dead]}
+        self.sim.random = Mock()
+        self.sim.random.get.return_value.randint.return_value = 1
+        self.sim._form_social_ties(person)
+        self.assertNotIn(dead.id, person.relations)
+
     def test_trial_progress_does_not_transfer_between_candidates(self):
         first = self.candidate(1, Factor.ORDER)
         second = self.candidate(2, Factor.ORDER)
@@ -184,6 +195,61 @@ class FlamechaseTests(unittest.TestCase):
             self.sim._resolve_time_trial()
         self.assertEqual(self.sim.state.titans["oronyx"].coreflame_status, "within_titan")
 
+    def test_an_exiled_port_guild_keeps_the_ocean_trial_available(self):
+        candidate = self.candidate(1, Factor.NIHILITY)
+        candidate.region_id, candidate.empathy = "grove", 30
+        guild = self.sim.state.organizations["styxia_guild"]
+        guild.member_ids = {candidate.id}
+        guild.leader_id, guild.influence = candidate.id, 40
+        candidate.organization_id = guild.id
+        self.sim.state.regions["styxia"].status = "lost"
+        self.sim._resolve_organizations()
+        self.assertEqual(guild.region_id, "grove")
+        self.assertTrue(any(e.type == "organization_exile" for e in self.sim.state.events))
+        self.sim.state.year = 50
+        region = self.sim.state.regions["grove"]
+        region.black_tide = 40
+        for _ in range(5):
+            self.sim._record_ocean_passage(candidate, region, "aid")
+        self.assertEqual(candidate.trial_evidence["phagousa"], 5)
+        guild.member_ids.clear()
+        self.assertFalse(self.sim._ocean_trial_region(region))
+
+    def test_a_demigod_walks_to_the_death_candidate_without_teleportation(self):
+        candidate = self.candidate(1, Factor.EQUILIBRIUM)
+        candidate.region_id = "euthyria"
+        companion = self.candidate(2, Factor.ORDER)
+        companion.region_id = "grove"
+        self.sim._inherit_coreflame(self.sim.state.titans["talanton"], companion, "共同之律")
+        candidate.relations = {companion.id: Relation(companion.id, "金线同行者", 70)}
+        companion.relations[candidate.id] = Relation(candidate.id, "金线同行者", 70)
+        death = self.sim.state.titans["thanatos"]
+        death.authority_state = {"candidate_id": candidate.id, "curse_victim_ids": ["a", "b", "c"]}
+        self.sim.state.year = 51
+        before = sum(r.population for r in self.sim.state.regions.values())
+        self.sim._resolve_death_trial()
+        self.assertEqual(companion.region_id, "styxia")
+        self.assertEqual(death.coreflame_status, "within_titan")
+        self.sim.state.year = 52
+        self.sim._resolve_death_trial()
+        self.assertEqual(companion.region_id, "euthyria")
+        self.assertEqual(death.coreflame_status, "held")
+        self.assertEqual(sum(r.population for r in self.sim.state.regions.values()), before)
+
+    def test_an_earth_bound_demigod_does_not_abandon_land_to_visit(self):
+        candidate = self.candidate(1, Factor.EQUILIBRIUM)
+        candidate.region_id = "euthyria"
+        companion = self.candidate(2, Factor.PERMANENCE)
+        companion.region_id = companion.bound_region_id = "grove"
+        self.sim._inherit_coreflame(self.sim.state.titans["georios"], companion, "守土")
+        candidate.relations = {companion.id: Relation(companion.id, "同行者", 70)}
+        companion.relations[candidate.id] = Relation(candidate.id, "同行者", 70)
+        self.sim.state.titans["thanatos"].authority_state = {"candidate_id": candidate.id, "curse_victim_ids": ["a", "b", "c"]}
+        self.sim.state.year = 51
+        self.sim._resolve_death_trial()
+        self.assertEqual(companion.region_id, "grove")
+        self.assertEqual(self.sim.state.titans["thanatos"].coreflame_status, "within_titan")
+
     def test_special_destiny_requires_both_the_factor_tail_and_independent_judgment(self):
         candidate = self.candidate(1, Factor.REMEMBRANCE)
         self.sim.random = Mock()
@@ -248,6 +314,40 @@ class FlamechaseTests(unittest.TestCase):
         self.sim.state.year = 20
         self.sim._resolve_law_authority()
         self.assertEqual(titan.coreflame_status, "returned")
+
+    def test_time_as_ocean_anchor_commits_both_returns_in_the_correct_order(self):
+        time_holder = self.candidate(1, Factor.REMEMBRANCE, "unblemished_soul")
+        ocean_holder = self.candidate(2, Factor.NIHILITY)
+        time, ocean = self.sim.state.titans["oronyx"], self.sim.state.titans["phagousa"]
+        self.sim._inherit_coreflame(time, time_holder, "忆页三问")
+        self.sim._inherit_coreflame(ocean, ocean_holder, "污海引航")
+        ocean.authority_state["anchor_id"] = time_holder.id
+        self.sim._resolve_time_authority()
+        self.assertEqual(ocean.coreflame_status, "held")
+        self.assertFalse(any(e.type == "time_final_pledge" for e in self.sim.state.events))
+        for index, key in enumerate(sorted(ORDINARY_FIRES - {"phagousa"}), 3):
+            titan = self.sim.state.titans[key]
+            holder = self.sim.state.people["tribios"] if key == "janus" else self.candidate(index, titan.factor)
+            if key != "janus":
+                self.sim._inherit_coreflame(titan, holder, "可追溯试炼")
+            self.sim._return_coreflame(titan, holder, "实际归还")
+        # A status flag without a real story cannot start this final transaction.
+        story = self.sim.state.flame_stories["aquila"]
+        event_id = story.pop("returned_event_id")
+        self.sim._resolve_time_authority()
+        self.assertEqual(ocean.coreflame_status, "held")
+        story["returned_event_id"] = event_id
+        self.sim._resolve_time_authority()
+        self.assertEqual(ocean.coreflame_status, "returned")
+        self.assertEqual(time.coreflame_status, "returned")
+        self.assertFalse(time_holder.alive)
+        self.assertFalse(ocean_holder.alive)
+        self.assertEqual(set(time.authority_state["witnessed_fire_ids"]), ORDINARY_FIRES)
+        returned = [e.effects[0] for e in self.sim.state.events if e.type == "coreflame_returned"]
+        self.assertEqual(returned[-2:], ["coreflame:phagousa:returned", "coreflame:oronyx:returned"])
+        before = len(self.sim.state.events)
+        self.sim._resolve_time_authority()
+        self.assertEqual(len(self.sim.state.events), before)
 
     def test_ten_returns_time_witness_and_worldbearer_form_a_complete_chain(self):
         time_holder = self.candidate(1, Factor.REMEMBRANCE, "unblemished_soul")

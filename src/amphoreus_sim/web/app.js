@@ -164,6 +164,7 @@ async function showPerson(personId) {
   const parents = person.parents.length ? person.parents.map((parent) => parent.name).join("、") : "无可追溯亲属记录";
   const reasons = person.impact_reasons.length ? person.impact_reasons.join("；") : "尚未形成世界级影响";
   const fate = person.alive ? "仍在世" : `第 ${person.death_year} 年离世：${person.death_cause || "死因未记录"}`;
+  const specialRole = {unblemished_soul: "无暇之灵魂", perfect_vessel: "完美之容器"}[person.special_role];
   const titanRelations = person.titan_relations.map((relation) => `${relation.name}（${relation.domain}）${relation.stance >= 0 ? "虔诚" : "反抗"} ${Math.abs(relation.stance)}`).join("、") || "尚未形成明确的泰坦关系";
   const traits = [["勇气", person.courage], ["共情", person.empathy], ["意志", person.willpower], ["克制", person.restraint], ["野心", person.ambition], ["适应力", person.adaptability], ["责任", person.responsibility]]
     .map(([name, value]) => `${name} ${value}`).join(" · ");
@@ -183,8 +184,10 @@ async function showPerson(personId) {
     person.trial_evidence?.zagreus !== undefined ? `扎格列斯最后谎言：${person.trial_evidence.zagreus}/3 阶段` : "扎格列斯最后谎言：尚未开始",
     person.trial_evidence?.talanton !== undefined ? `塔兰顿守律：${person.trial_evidence.talanton}/5 次危机中的自我约束` : "塔兰顿守律：尚未立律",
     person.trial_evidence?.mnestia !== undefined ? `墨涅塔编织：${person.trial_evidence.mnestia}/3 段相互承认的关系` : "墨涅塔编织：尚未织结",
-  ].join("<br>");
-  byId("person-detail").innerHTML = `<strong>${person.name}</strong><p>${person.region_name} · ${person.age} 岁 · ${stageNames[person.life_stage]} · ${organization}</p><p>出身：${person.origin_region_name}</p><p>${fate}</p><p>亲属：${parents}</p><p>主导因子：${factorNames[person.dominant_factor]} · 世界影响 ${person.world_impact}</p><p>候选人特质：${traits}</p><p>人生痕迹：${lifeTraces}</p><p>${flameTrials}</p><p>泰坦关系：${titanRelations}</p><p>影响来源：${reasons}</p><ul>${relationships}</ul>`;
+    person.trial_evidence?.oronyx_memory_years !== undefined ? `欧洛尼斯忆页三问：${person.trial_evidence.oronyx_memory_years}/15 年` : null,
+    person.trial_evidence?.kephale_burdens !== undefined ? `刻法勒承灾：${person.trial_evidence.kephale_burdens}/10 次承担` : null,
+  ].filter(Boolean).join("<br>");
+  byId("person-detail").innerHTML = `<strong>${person.name}${specialRole ? ` · ${specialRole}` : ""}</strong><p>${person.region_name} · ${person.age} 岁 · ${stageNames[person.life_stage]} · ${organization}</p><p>出身：${person.origin_region_name}</p><p>${fate}</p><p>亲属：${parents}</p><p>主导因子：${factorNames[person.dominant_factor]} · 世界影响 ${person.world_impact}</p><p>候选人特质：${traits}</p><p>人生痕迹：${lifeTraces}</p><p>${flameTrials}</p><p>泰坦关系：${titanRelations}</p><p>影响来源：${reasons}</p><ul>${relationships}</ul>`;
   document.querySelectorAll("[data-person-id]").forEach((card) => card.classList.toggle("selected", card.dataset.personId === personId));
 }
 

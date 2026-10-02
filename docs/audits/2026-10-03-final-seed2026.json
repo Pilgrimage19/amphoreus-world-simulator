@@ -1,0 +1,960 @@
+[
+  {
+    "seed": 2026,
+    "ending": "collapse",
+    "ending_year": 1287,
+    "population": {
+      "civilians": 126338,
+      "generated_people": 25102,
+      "alive_people": 993,
+      "golden_or_demigod": 9680
+    },
+    "lost_regions": [
+      {
+        "region_id": "skyward",
+        "year": 10
+      },
+      {
+        "region_id": "janusopolis",
+        "year": 56
+      },
+      {
+        "region_id": "euthyria",
+        "year": 74
+      },
+      {
+        "region_id": "styxia",
+        "year": 102
+      },
+      {
+        "region_id": "swordpeak",
+        "year": 117
+      },
+      {
+        "region_id": "nikador_refuge_janusopolis",
+        "year": 513
+      },
+      {
+        "region_id": "nikador_refuge_euthyria",
+        "year": 538
+      },
+      {
+        "region_id": "nikador_refuge_skyward",
+        "year": 650
+      },
+      {
+        "region_id": "grove",
+        "year": 761
+      },
+      {
+        "region_id": "georios_foundation",
+        "year": 1276
+      },
+      {
+        "region_id": "okhema",
+        "year": 1287
+      }
+    ],
+    "gate_rescues": [
+      {
+        "year": 117,
+        "summary": "塔洛·裂盾试图逃离悬锋城却发现道路断绝；缇里西庇俄丝打开门径，将其送回奥赫玛；剩余额度 4。"
+      },
+      {
+        "year": 118,
+        "summary": "梅妲·断锋试图逃离悬锋城却发现道路断绝；缇里西庇俄丝打开门径，将其送回奥赫玛；剩余额度 3。"
+      },
+      {
+        "year": 119,
+        "summary": "梅妲·裂盾试图逃离悬锋城却发现道路断绝；缇里西庇俄丝打开门径，将其送回奥赫玛；剩余额度 2。"
+      },
+      {
+        "year": 120,
+        "summary": "梅妲·裂盾试图逃离悬锋城却发现道路断绝；缇里西庇俄丝打开门径，将其送回奥赫玛；剩余额度 1。"
+      },
+      {
+        "year": 121,
+        "summary": "德拉·峭壁试图逃离悬锋城却发现道路断绝；缇里西庇俄丝打开门径，将其送回奥赫玛；剩余额度 0。"
+      }
+    ],
+    "reason_milestones": [
+      {
+        "year": 5,
+        "type": "reason_exam_started",
+        "summary": "露娅·冰原开始参加瑟希斯四证。"
+      },
+      {
+        "year": 5,
+        "type": "reason_exam_started",
+        "summary": "珀西·双门开始参加瑟希斯四证。"
+      },
+      {
+        "year": 5,
+        "type": "reason_exam_started",
+        "summary": "米涅·神谕开始参加瑟希斯四证。"
+      },
+      {
+        "year": 5,
+        "type": "reason_exam_started",
+        "summary": "奈安·灰杉开始参加瑟希斯四证。"
+      },
+      {
+        "year": 5,
+        "type": "reason_exam_started",
+        "summary": "诺拉·日轮开始参加瑟希斯四证。"
+      },
+      {
+        "year": 5,
+        "type": "reason_exam_started",
+        "summary": "卡戎·回廊开始参加瑟希斯四证。"
+      },
+      {
+        "year": 5,
+        "type": "reason_exam_started",
+        "summary": "塞芙·静眠开始参加瑟希斯四证。"
+      },
+      {
+        "year": 5,
+        "type": "reason_exam_started",
+        "summary": "波恩·珊瑚开始参加瑟希斯四证。"
+      },
+      {
+        "year": 5,
+        "type": "reason_exam_started",
+        "summary": "伊芙·回廊开始参加瑟希斯四证。"
+      },
+      {
+        "year": 5,
+        "type": "reason_exam_started",
+        "summary": "弥索·火矛开始参加瑟希斯四证。"
+      },
+      {
+        "year": 6,
+        "type": "reason_exam_started",
+        "summary": "伊戈·青刃开始参加瑟希斯四证。"
+      },
+      {
+        "year": 7,
+        "type": "reason_exam_started",
+        "summary": "瑞娅·战痕开始参加瑟希斯四证。"
+      },
+      {
+        "year": 7,
+        "type": "reason_exam_started",
+        "summary": "洛珊·长梦开始参加瑟希斯四证。"
+      },
+      {
+        "year": 7,
+        "type": "reason_exam_started",
+        "summary": "卡珊·丰穗开始参加瑟希斯四证。"
+      },
+      {
+        "year": 7,
+        "type": "reason_exam_started",
+        "summary": "莱索·白羽开始参加瑟希斯四证。"
+      },
+      {
+        "year": 7,
+        "type": "reason_exam_started",
+        "summary": "奈安·白冢开始参加瑟希斯四证。"
+      },
+      {
+        "year": 8,
+        "type": "reason_exam_started",
+        "summary": "德墨·青藤开始参加瑟希斯四证。"
+      },
+      {
+        "year": 8,
+        "type": "reason_exam_started",
+        "summary": "诺拉·河谷开始参加瑟希斯四证。"
+      },
+      {
+        "year": 8,
+        "type": "reason_exam_started",
+        "summary": "弥娅·丰穗开始参加瑟希斯四证。"
+      },
+      {
+        "year": 9,
+        "type": "reason_exam_started",
+        "summary": "珀拉·河谷开始参加瑟希斯四证。"
+      },
+      {
+        "year": 9,
+        "type": "reason_exam_started",
+        "summary": "特弥·星砂开始参加瑟希斯四证。"
+      },
+      {
+        "year": 10,
+        "type": "reason_exam_started",
+        "summary": "诺拉·青藤开始参加瑟希斯四证。"
+      },
+      {
+        "year": 10,
+        "type": "reason_exam_started",
+        "summary": "朵拉·林冠开始参加瑟希斯四证。"
+      },
+      {
+        "year": 13,
+        "type": "reason_exam_passed",
+        "summary": "卡戎·回廊通过瑟希斯四证的“辨真”。"
+      },
+      {
+        "year": 13,
+        "type": "reason_exam_passed",
+        "summary": "波恩·珊瑚通过瑟希斯四证的“辨真”。"
+      },
+      {
+        "year": 14,
+        "type": "reason_exam_passed",
+        "summary": "米涅·神谕通过瑟希斯四证的“辨真”。"
+      },
+      {
+        "year": 15,
+        "type": "reason_exam_passed",
+        "summary": "诺拉·日轮通过瑟希斯四证的“辨真”。"
+      },
+      {
+        "year": 16,
+        "type": "reason_exam_passed",
+        "summary": "伊戈·青刃通过瑟希斯四证的“辨真”。"
+      },
+      {
+        "year": 16,
+        "type": "reason_exam_passed",
+        "summary": "奈安·白冢通过瑟希斯四证的“辨真”。"
+      },
+      {
+        "year": 17,
+        "type": "reason_exam_passed",
+        "summary": "珀拉·河谷通过瑟希斯四证的“辨真”。"
+      },
+      {
+        "year": 17,
+        "type": "reason_exam_passed",
+        "summary": "卡珊·丰穗通过瑟希斯四证的“辨真”。"
+      },
+      {
+        "year": 17,
+        "type": "reason_exam_passed",
+        "summary": "弥娅·丰穗通过瑟希斯四证的“辨真”。"
+      },
+      {
+        "year": 18,
+        "type": "reason_exam_passed",
+        "summary": "珀西·双门通过瑟希斯四证的“辨真”。"
+      },
+      {
+        "year": 18,
+        "type": "reason_exam_passed",
+        "summary": "莱索·白羽通过瑟希斯四证的“辨真”。"
+      },
+      {
+        "year": 18,
+        "type": "reason_exam_passed",
+        "summary": "伊芙·回廊通过瑟希斯四证的“辨真”。"
+      },
+      {
+        "year": 18,
+        "type": "reason_exam_passed",
+        "summary": "弥索·火矛通过瑟希斯四证的“辨真”。"
+      },
+      {
+        "year": 19,
+        "type": "reason_exam_passed",
+        "summary": "诺拉·青藤通过瑟希斯四证的“辨真”。"
+      },
+      {
+        "year": 19,
+        "type": "reason_exam_passed",
+        "summary": "奈安·灰杉通过瑟希斯四证的“辨真”。"
+      },
+      {
+        "year": 19,
+        "type": "reason_exam_passed",
+        "summary": "塞芙·静眠通过瑟希斯四证的“辨真”。"
+      },
+      {
+        "year": 20,
+        "type": "reason_exam_passed",
+        "summary": "瑞娅·战痕通过瑟希斯四证的“辨真”。"
+      },
+      {
+        "year": 20,
+        "type": "reason_exam_passed",
+        "summary": "洛珊·长梦通过瑟希斯四证的“辨真”。"
+      },
+      {
+        "year": 21,
+        "type": "reason_exam_passed",
+        "summary": "露娅·冰原通过瑟希斯四证的“辨真”。"
+      },
+      {
+        "year": 21,
+        "type": "reason_exam_passed",
+        "summary": "德墨·青藤通过瑟希斯四证的“辨真”。"
+      },
+      {
+        "year": 21,
+        "type": "reason_exam_passed",
+        "summary": "朵拉·林冠通过瑟希斯四证的“辨真”。"
+      },
+      {
+        "year": 21,
+        "type": "reason_exam_started",
+        "summary": "波恩·深锚开始参加瑟希斯四证。"
+      },
+      {
+        "year": 22,
+        "type": "reason_exam_passed",
+        "summary": "诺拉·河谷通过瑟希斯四证的“辨真”。"
+      },
+      {
+        "year": 22,
+        "type": "reason_exam_passed",
+        "summary": "卡戎·回廊通过瑟希斯四证的“演绎”。"
+      },
+      {
+        "year": 22,
+        "type": "reason_exam_passed",
+        "summary": "波恩·珊瑚通过瑟希斯四证的“演绎”。"
+      },
+      {
+        "year": 24,
+        "type": "reason_exam_passed",
+        "summary": "米涅·神谕通过瑟希斯四证的“演绎”。"
+      },
+      {
+        "year": 24,
+        "type": "reason_exam_passed",
+        "summary": "特弥·星砂通过瑟希斯四证的“辨真”。"
+      },
+      {
+        "year": 24,
+        "type": "reason_exam_started",
+        "summary": "希娅·河谷开始参加瑟希斯四证。"
+      },
+      {
+        "year": 26,
+        "type": "reason_exam_passed",
+        "summary": "诺拉·日轮通过瑟希斯四证的“演绎”。"
+      },
+      {
+        "year": 26,
+        "type": "reason_exam_passed",
+        "summary": "珀拉·河谷通过瑟希斯四证的“演绎”。"
+      },
+      {
+        "year": 26,
+        "type": "reason_exam_passed",
+        "summary": "奈安·白冢通过瑟希斯四证的“演绎”。"
+      },
+      {
+        "year": 27,
+        "type": "reason_exam_passed",
+        "summary": "伊戈·青刃通过瑟希斯四证的“演绎”。"
+      },
+      {
+        "year": 27,
+        "type": "reason_exam_passed",
+        "summary": "弥娅·丰穗通过瑟希斯四证的“演绎”。"
+      },
+      {
+        "year": 28,
+        "type": "reason_exam_passed",
+        "summary": "卡珊·丰穗通过瑟希斯四证的“演绎”。"
+      },
+      {
+        "year": 28,
+        "type": "reason_exam_started",
+        "summary": "瑞娅·风暴开始参加瑟希斯四证。"
+      },
+      {
+        "year": 28,
+        "type": "reason_exam_started",
+        "summary": "菲娜·远帆开始参加瑟希斯四证。"
+      },
+      {
+        "year": 29,
+        "type": "reason_exam_passed",
+        "summary": "诺拉·青藤通过瑟希斯四证的“演绎”。"
+      },
+      {
+        "year": 30,
+        "type": "reason_exam_passed",
+        "summary": "莱索·白羽通过瑟希斯四证的“演绎”。"
+      },
+      {
+        "year": 31,
+        "type": "reason_exam_passed",
+        "summary": "卡戎·回廊通过瑟希斯四证的“衡世”。"
+      },
+      {
+        "year": 31,
+        "type": "reason_exam_passed",
+        "summary": "波恩·珊瑚通过瑟希斯四证的“衡世”。"
+      },
+      {
+        "year": 31,
+        "type": "reason_exam_started",
+        "summary": "斐恩·苔庭开始参加瑟希斯四证。"
+      },
+      {
+        "year": 31,
+        "type": "reason_exam_started",
+        "summary": "弥拉·珊瑚开始参加瑟希斯四证。"
+      },
+      {
+        "year": 32,
+        "type": "reason_exam_passed",
+        "summary": "珀西·双门通过瑟希斯四证的“演绎”。"
+      },
+      {
+        "year": 32,
+        "type": "reason_exam_passed",
+        "summary": "伊芙·回廊通过瑟希斯四证的“演绎”。"
+      },
+      {
+        "year": 32,
+        "type": "reason_exam_passed",
+        "summary": "弥索·火矛通过瑟希斯四证的“演绎”。"
+      },
+      {
+        "year": 32,
+        "type": "reason_exam_started",
+        "summary": "斐恩·白羽开始参加瑟希斯四证。"
+      },
+      {
+        "year": 33,
+        "type": "reason_exam_passed",
+        "summary": "朵拉·林冠通过瑟希斯四证的“演绎”。"
+      },
+      {
+        "year": 33,
+        "type": "reason_exam_passed",
+        "summary": "波恩·深锚通过瑟希斯四证的“辨真”。"
+      },
+      {
+        "year": 33,
+        "type": "reason_exam_started",
+        "summary": "莱索·书叶开始参加瑟希斯四证。"
+      },
+      {
+        "year": 34,
+        "type": "reason_exam_passed",
+        "summary": "米涅·神谕通过瑟希斯四证的“衡世”。"
+      },
+      {
+        "year": 34,
+        "type": "reason_exam_passed",
+        "summary": "奈安·灰杉通过瑟希斯四证的“演绎”。"
+      },
+      {
+        "year": 34,
+        "type": "reason_exam_passed",
+        "summary": "瑞娅·战痕通过瑟希斯四证的“演绎”。"
+      },
+      {
+        "year": 34,
+        "type": "reason_exam_passed",
+        "summary": "塞芙·静眠通过瑟希斯四证的“演绎”。"
+      },
+      {
+        "year": 35,
+        "type": "reason_exam_passed",
+        "summary": "德墨·青藤通过瑟希斯四证的“演绎”。"
+      },
+      {
+        "year": 35,
+        "type": "reason_exam_passed",
+        "summary": "希娅·河谷通过瑟希斯四证的“辨真”。"
+      },
+      {
+        "year": 36,
+        "type": "reason_exam_passed",
+        "summary": "奈安·白冢通过瑟希斯四证的“衡世”。"
+      },
+      {
+        "year": 36,
+        "type": "reason_exam_started",
+        "summary": "密雅·林冠开始参加瑟希斯四证。"
+      },
+      {
+        "year": 37,
+        "type": "reason_exam_passed",
+        "summary": "诺拉·河谷通过瑟希斯四证的“演绎”。"
+      },
+      {
+        "year": 37,
+        "type": "reason_exam_passed",
+        "summary": "诺拉·日轮通过瑟希斯四证的“衡世”。"
+      },
+      {
+        "year": 38,
+        "type": "reason_exam_passed",
+        "summary": "伊戈·青刃通过瑟希斯四证的“衡世”。"
+      },
+      {
+        "year": 38,
+        "type": "reason_exam_passed",
+        "summary": "菲娜·远帆通过瑟希斯四证的“辨真”。"
+      },
+      {
+        "year": 39,
+        "type": "reason_exam_passed",
+        "summary": "诺拉·青藤通过瑟希斯四证的“衡世”。"
+      },
+      {
+        "year": 39,
+        "type": "reason_exam_passed",
+        "summary": "卡珊·丰穗通过瑟希斯四证的“衡世”。"
+      },
+      {
+        "year": 39,
+        "type": "reason_exam_started",
+        "summary": "诺拉·月井开始参加瑟希斯四证。"
+      },
+      {
+        "year": 39,
+        "type": "reason_exam_started",
+        "summary": "伊安·长阶开始参加瑟希斯四证。"
+      },
+      {
+        "year": 40,
+        "type": "reason_exam_passed",
+        "summary": "特弥·星砂通过瑟希斯四证的“演绎”。"
+      },
+      {
+        "year": 40,
+        "type": "reason_exam_passed",
+        "summary": "波恩·珊瑚通过瑟希斯四证的“择未来”。"
+      },
+      {
+        "year": 42,
+        "type": "reason_demigod_created",
+        "summary": "塔维·风环在波恩·珊瑚的理性教导下通过艾格勒火种试炼，成为半神；权能已完成 1/3。"
+      },
+      {
+        "year": 50,
+        "type": "reason_demigod_created",
+        "summary": "赫恩·铁誓在波恩·珊瑚的理性教导下通过尼卡多利火种试炼，成为半神；权能已完成 2/3。"
+      },
+      {
+        "year": 60,
+        "type": "reason_demigod_created",
+        "summary": "弥冬·北风在波恩·珊瑚的理性教导下通过塞纳托斯火种试炼，成为半神；权能已完成 3/3。"
+      }
+    ],
+    "fire_journeys": {
+      "aquila": {
+        "name": "艾格勒",
+        "status": "returned",
+        "holder": null,
+        "inherited_years": [
+          42
+        ],
+        "returned_years": [
+          886
+        ],
+        "authority_state": {
+          "storm_burden": 2,
+          "warnings_issued": 844,
+          "healing_used": 1,
+          "inherited_year": 42
+        }
+      },
+      "georios": {
+        "name": "吉奥里亚",
+        "status": "returned",
+        "holder": null,
+        "inherited_years": [
+          150
+        ],
+        "returned_years": [
+          155
+        ],
+        "authority_state": {
+          "bonded_region_id": "okhema",
+          "land_burden": 3,
+          "inherited_year": 150
+        }
+      },
+      "phagousa": {
+        "name": "法古萨",
+        "status": "returned",
+        "holder": null,
+        "inherited_years": [
+          555
+        ],
+        "returned_years": [
+          886
+        ],
+        "authority_state": {
+          "anchor_id": "person-0644",
+          "voyages": 10,
+          "pollution_burden": 10,
+          "inherited_year": 555
+        }
+      },
+      "oronyx": {
+        "name": "欧洛尼斯",
+        "status": "within_titan",
+        "holder": null,
+        "inherited_years": [],
+        "returned_years": [],
+        "authority_state": {}
+      },
+      "talanton": {
+        "name": "塔兰顿",
+        "status": "returned",
+        "holder": null,
+        "inherited_years": [
+          74
+        ],
+        "returned_years": [
+          94
+        ],
+        "authority_state": {
+          "bound_organization_id": "styxia_guild",
+          "rigidity": 21,
+          "judgment_count": 4,
+          "inherited_year": 74
+        }
+      },
+      "janus": {
+        "name": "雅努斯",
+        "status": "returned",
+        "holder": null,
+        "inherited_years": [
+          0
+        ],
+        "returned_years": [
+          121
+        ],
+        "authority_state": {
+          "rescue_charges": 0,
+          "inherited_year": 0
+        }
+      },
+      "mnestia": {
+        "name": "墨涅塔",
+        "status": "returned",
+        "holder": null,
+        "inherited_years": [
+          71
+        ],
+        "returned_years": [
+          117
+        ],
+        "authority_state": {
+          "weave_count": 46,
+          "emotional_burden": 15,
+          "inherited_year": 71,
+          "heir_links": 9
+        }
+      },
+      "kephale": {
+        "name": "刻法勒",
+        "status": "within_titan",
+        "holder": null,
+        "inherited_years": [],
+        "returned_years": [],
+        "authority_state": {}
+      },
+      "cerces": {
+        "name": "瑟希斯",
+        "status": "returned",
+        "holder": null,
+        "inherited_years": [
+          40
+        ],
+        "returned_years": [
+          60
+        ],
+        "authority_state": {
+          "created_demigod_ids": [
+            "person-0644",
+            "resident-00023-swordpeak-002",
+            "resident-00038-euthyria-001"
+          ],
+          "inherited_year": 40
+        }
+      },
+      "zagreus": {
+        "name": "扎格列斯",
+        "status": "returned",
+        "holder": null,
+        "inherited_years": [
+          154
+        ],
+        "returned_years": [
+          203
+        ],
+        "authority_state": {
+          "exposed_organization_ids": [
+            "styxia_guild",
+            "okhema_council",
+            "nikador_refuge_janusopolis_guard",
+            "nikador_refuge_euthyria_guard",
+            "grove_scholars"
+          ],
+          "mask_burden": 50,
+          "dawn_years": 50,
+          "dawn_active": 0,
+          "inherited_year": 154,
+          "last_message_holder_id": "person-0644"
+        }
+      },
+      "nikador": {
+        "name": "尼卡多利",
+        "status": "returned",
+        "holder": null,
+        "inherited_years": [
+          50
+        ],
+        "returned_years": [
+          79
+        ],
+        "authority_state": {
+          "challenge_count": 1,
+          "journey_years": 30,
+          "refuge_ids": [
+            "nikador_refuge_skyward",
+            "nikador_refuge_janusopolis",
+            "nikador_refuge_euthyria"
+          ],
+          "battle_count": 6,
+          "inherited_year": 50
+        }
+      },
+      "thanatos": {
+        "name": "塞纳托斯",
+        "status": "held",
+        "holder": "resident-00038-euthyria-001",
+        "inherited_years": [
+          60
+        ],
+        "returned_years": [],
+        "authority_state": {
+          "bond_id": "resident-00039-euthyria-001",
+          "souls_guided": 24109,
+          "in_underworld": 1,
+          "inherited_year": 60
+        }
+      }
+    },
+    "flame_stories": {
+      "janus": {
+        "titan_id": "janus",
+        "domain": "门径",
+        "holder_id": "tribios",
+        "holder_name": "缇里西庇俄丝",
+        "trial": "逐火时代开始前的门径试炼",
+        "inherited_year": 0,
+        "inherited_event_id": "E-00000-00001",
+        "returned_year": 121,
+        "return_reason": "门径额度在最后一次救援中耗尽",
+        "returned_event_id": "E-00121-02751",
+        "supporter_ids": [
+          "person-0263",
+          "person-0755",
+          "person-0963"
+        ],
+        "imprint": "最后一扇为他人打开的门"
+      },
+      "cerces": {
+        "titan_id": "cerces",
+        "domain": "理性",
+        "holder_id": "person-0810",
+        "holder_name": "波恩·珊瑚",
+        "trial": "瑟希斯四证",
+        "inherited_year": 40,
+        "inherited_event_id": "E-00040-00705",
+        "returned_year": 60,
+        "return_reason": "培养出三名半神后，理性权能耗尽",
+        "returned_event_id": "E-00060-01143",
+        "supporter_ids": [
+          "person-0074",
+          "person-0096",
+          "person-0113",
+          "person-0267",
+          "person-0350",
+          "person-0442",
+          "person-0825",
+          "person-0863",
+          "person-0892",
+          "person-0921"
+        ],
+        "imprint": "传给后来者而不被垄断的知识"
+      },
+      "aquila": {
+        "titan_id": "aquila",
+        "domain": "天空",
+        "holder_id": "person-0644",
+        "holder_name": "塔维·风环",
+        "trial": "高天血脉与避难通道试炼",
+        "inherited_year": 42,
+        "inherited_event_id": "E-00042-00739",
+        "returned_year": 886,
+        "return_reason": "在奥赫玛不可逆坠落前发动唯一一次天空治愈",
+        "returned_event_id": "E-00886-20410",
+        "supporter_ids": [
+          "person-0469",
+          "person-0482",
+          "person-0589",
+          "person-0595",
+          "person-0650",
+          "person-0838",
+          "person-0885"
+        ],
+        "imprint": "为脆弱者撑起的天空"
+      },
+      "nikador": {
+        "titan_id": "nikador",
+        "domain": "纷争",
+        "holder_id": "resident-00023-swordpeak-002",
+        "holder_name": "赫恩·铁誓",
+        "trial": "正面击碎纷争泰坦神躯",
+        "inherited_year": 50,
+        "inherited_event_id": "E-00050-00897",
+        "returned_year": 79,
+        "return_reason": "在黑潮行旅中战至最后，为废墟中的新生留下反抗的火",
+        "returned_event_id": "E-00079-01692",
+        "supporter_ids": [
+          "person-0696",
+          "resident-00020-swordpeak-000",
+          "resident-00024-swordpeak-000",
+          "resident-00025-swordpeak-002"
+        ],
+        "imprint": "在废墟中仍敢迎接新生的勇气"
+      },
+      "thanatos": {
+        "titan_id": "thanatos",
+        "domain": "死亡",
+        "holder_id": "resident-00038-euthyria-001",
+        "holder_name": "弥冬·北风",
+        "trial": "有人主动跨过厄运的冥河试炼",
+        "inherited_year": 60,
+        "inherited_event_id": "E-00060-01140",
+        "returned_year": null,
+        "return_reason": null,
+        "returned_event_id": null,
+        "supporter_ids": [
+          "resident-00038-euthyria-002",
+          "resident-00038-euthyria-003",
+          "resident-00039-euthyria-001",
+          "resident-00042-euthyria-001",
+          "resident-00045-euthyria-002"
+        ],
+        "imprint": null
+      },
+      "mnestia": {
+        "titan_id": "mnestia",
+        "domain": "浪漫",
+        "holder_id": "resident-00037-swordpeak-001",
+        "holder_name": "阿克·断锋",
+        "trial": "为他人编织、而非占有",
+        "inherited_year": 71,
+        "inherited_event_id": "E-00071-01494",
+        "returned_year": 117,
+        "return_reason": "将最珍视的情感编入幸存者彼此相认的纽带",
+        "returned_event_id": "E-00117-02661",
+        "supporter_ids": [
+          "birth-00015-swordpeak-000",
+          "birth-00017-swordpeak-000",
+          "birth-00018-swordpeak-000",
+          "resident-00036-swordpeak-002",
+          "resident-00037-swordpeak-000",
+          "resident-00043-swordpeak-001"
+        ],
+        "imprint": "让分离者彼此相认的金线"
+      },
+      "talanton": {
+        "titan_id": "talanton",
+        "domain": "律法",
+        "holder_id": "resident-00047-styxia-001",
+        "holder_name": "洛萨·珍珠",
+        "trial": "受自身之法审判",
+        "inherited_year": 74,
+        "inherited_event_id": "E-00074-01565",
+        "returned_year": 94,
+        "return_reason": "在诸火归还后放弃一切特权，使律法同样约束自己",
+        "returned_event_id": "E-00094-02061",
+        "supporter_ids": [
+          "resident-00050-styxia-002",
+          "resident-00059-styxia-000"
+        ],
+        "imprint": "约束掌权者的共同之律"
+      },
+      "georios": {
+        "titan_id": "georios",
+        "domain": "大地",
+        "holder_id": "resident-00123-okhema-001",
+        "holder_name": "德墨·月井",
+        "trial": "大地火种试炼",
+        "inherited_year": 150,
+        "inherited_event_id": "E-00150-03577",
+        "returned_year": 155,
+        "return_reason": "以自身与火种在奥赫玛附近扎根，留下新城基址",
+        "returned_event_id": "E-00155-03723",
+        "supporter_ids": [
+          "resident-00123-okhema-012"
+        ],
+        "imprint": "可以重新扎根的土地"
+      },
+      "zagreus": {
+        "titan_id": "zagreus",
+        "domain": "诡计",
+        "holder_id": "resident-00121-okhema-017",
+        "holder_name": "伊安·铜门",
+        "trial": "揭露阴谋并坦白最后的谎言",
+        "inherited_year": 154,
+        "inherited_event_id": "E-00154-03688",
+        "returned_year": 203,
+        "return_reason": "向塔维·风环交出维持黎明的秘密，把谎言争取的时间交给真实未来",
+        "returned_event_id": "E-00203-04745",
+        "supporter_ids": [],
+        "imprint": "替真实黎明争取时间的谎言"
+      },
+      "phagousa": {
+        "titan_id": "phagousa",
+        "domain": "海洋",
+        "holder_id": "resident-00525-grove-007",
+        "holder_name": "密雅·白羽",
+        "trial": "污海引航与无情之心试炼",
+        "inherited_year": 555,
+        "inherited_event_id": "E-00555-12389",
+        "returned_year": 886,
+        "return_reason": "唯一羁绊塔维·风环主动献祭后，选择与其同行",
+        "returned_event_id": "E-00886-20411",
+        "supporter_ids": [
+          "birth-00508-grove-000",
+          "resident-00525-grove-004",
+          "resident-00530-grove-000",
+          "resident-00539-grove-003",
+          "resident-00539-grove-006",
+          "resident-00546-grove-000"
+        ],
+        "imprint": "不被孤独截断的海路"
+      }
+    },
+    "recreation_blockers": [
+      "死亡火种尚未归还",
+      "岁月尚未完整见证十段故事并归还",
+      "仍缺少存活的完美之容器负世者",
+      "负世者尚未接纳十一枚火种印记"
+    ],
+    "special_candidates": [],
+    "anomalies": [],
+    "trial_evidence_counts": {
+      "aquila": 9,
+      "georios": 442,
+      "phagousa": 7,
+      "talanton": 480,
+      "mnestia": 441,
+      "zagreus": 312,
+      "cerces_exam_index": 26,
+      "oronyx_memory_years": 0,
+      "kephale_burdens": 0
+    }
+  }
+]

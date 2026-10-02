@@ -4,6 +4,8 @@ Rules here are sandbox adaptations, not a replay of named canon characters.
 The mixin uses Simulation's world, random streams, population and event helpers.
 """
 
+from collections import deque
+
 from .models import Factor, Organization, Person, Region, Relation, Titan
 
 
@@ -111,7 +113,9 @@ class FlamechaseMixin:
         companions = [self.state.people[r.target_id] for r in candidate.relations.values()
                       if r.target_id in self.state.people and r.trust >= 55
                       and self.state.people[r.target_id].alive
-                      and self.state.people[r.target_id].region_id == candidate.region_id
+                      and (self.state.people[r.target_id].region_id == candidate.region_id
+                           or (self._is_demigod(self.state.people[r.target_id])
+                               and self.state.people[r.target_id].bound_region_id is None))
                       and candidate.id in self.state.people[r.target_id].relations
                       and self.state.people[r.target_id].relations[candidate.id].trust >= 55
                       and (self._is_demigod(self.state.people[r.target_id])
@@ -119,6 +123,13 @@ class FlamechaseMixin:
         if not companions:
             return
         companion = max(companions, key=lambda p: (self._is_demigod(p), p.empathy + p.willpower, p.id))
+        if companion.region_id != candidate.region_id:
+            route = self._next_region_toward(companion.region_id, candidate.region_id)
+            if route is None or not self._move_demigod(companion, route):
+                return
+            self._emit("death_bond_visit", f"{companion.name}沿道路前往{candidate.name}身边，跨越世人畏惧的厄运。", ("relation:mutual_trust", "trial:thanatos:curse"), (f"person:{companion.id}:relocated:{route}",), (companion.id, candidate.id))
+            if companion.region_id != candidate.region_id:
+                return
         companion.relations[candidate.id].oath = "渡厄之心"
         candidate.relations[companion.id].oath = "渡厄之心"
         self._emit("death_bond_chosen", f"{companion.name}主动跨过厄运，选择与{candidate.name}结下渡厄之心。",
@@ -213,17 +224,12 @@ class FlamechaseMixin:
                 previous = self.state.people[person_id].organization_id
                 if previous in self.state.organizations:
                     self.state.organizations[previous].member_ids.discard(person_id)
+                    if self.state.organizations[previous].leader_id == person_id:
+                        self.state.organizations[previous].leader_id = None
                 self.state.people[person_id].organization_id = org_id
             self._emit("strife_refuge_founded", f"{holder.name}护送{settlers}名志愿者，在{ruin.name}废墟旁建立余烬营地；旧城并未复活。",
                        (f"region:{ruin.id}:lost", "coreflame:nikador"), (f"region:{refuge_id}:created",), (holder.id,))
-        if holder.region_id != ruin.id:
-            origin = self.state.regions[holder.region_id]
-            # A demigod is one real surviving inhabitant, not an extra sample
-            # that can be placed into a zero-population ruin without accounting.
-            if origin.population > 0:
-                origin.population -= 1
-                ruin.population += 1
-            holder.region_id = ruin.id
+        self._move_demigod(holder, ruin.id)
         self._record_life_trace(holder, "guardianship")
         self._emit("strife_black_tide_journey", f"{holder.name}再入{ruin.name}黑潮，为身后的新生聚落抵挡战祸。",
                    ("coreflame:nikador",), (f"authority:nikador:journey:{journey}",), (holder.id,))
@@ -231,6 +237,30 @@ class FlamechaseMixin:
         if journey >= STRIFE_MIN_JOURNEY_YEARS and self.random.get(f"strife_journey:{holder.id}").random() < risk:
             self._return_coreflame(titan, holder, "在黑潮行旅中战至最后，为废墟中的新生留下反抗的火")
             self._record_death(holder, "在保护复兴据点的黑潮战斗中阵亡")
+
+    def _move_demigod(self, person: Person, destination_id: str) -> bool:
+        if person.region_id == destination_id:
+            return True
+        origin = self.state.regions[person.region_id]
+        if origin.population <= 0:
+            return False
+        origin.population -= 1
+        self.state.regions[destination_id].population += 1
+        person.region_id = destination_id
+        return True
+
+    def _next_region_toward(self, origin_id: str, destination_id: str) -> str | None:
+        queue = deque([(origin_id, None)])
+        visited = {origin_id}
+        while queue:
+            region_id, first_hop = queue.popleft()
+            if region_id == destination_id:
+                return first_hop
+            for neighbor in self.state.regions[region_id].neighbours:
+                if neighbor not in visited:
+                    visited.add(neighbor)
+                    queue.append((neighbor, first_hop or neighbor))
+        return None
 
     def _special_candidates(self, titan_id: str, role: str) -> list[Person]:
         titan = self.state.titans[titan_id]
@@ -265,6 +295,21 @@ class FlamechaseMixin:
         if titan.coreflame_status != "held" or holder is None or not holder.alive:
             return
         witnessed = list(titan.authority_state.get("witnessed_fire_ids", []))
+        ocean = self.state.titans["phagousa"]
+        ocean_holder = self.state.people.get(ocean.coreflame_holder or "")
+        preceding = ORDINARY_FIRES - {"phagousa"}
+        if (ocean.coreflame_status == "held" and ocean_holder is not None
+                and ocean_holder.alive and ocean.authority_state.get("anchor_id") == holder.id
+                and all(self.state.titans[key].coreflame_status == "returned"
+                        and self.state.flame_stories.get(key, {}).get("returned_event_id")
+                        for key in preceding)):
+            # The two sacrifices commit in one resolution: Time chooses first,
+            # Ocean returns tenth, Time witnesses that real event and returns
+            # eleventh. Neither a premature return nor a dead anchor suffices.
+            self._emit("time_final_pledge", f"{holder.name}开始不可撤回的最后献祭，等待污海同行者留下第十段故事。",
+                       ("flame_stories:nine_returned", "relation:ocean_anchor"),
+                       ("sacrifice:oronyx:committed",), (holder.id, ocean_holder.id))
+            self._follow_ocean_anchor_sacrifice(holder)
         for titan_id in sorted(ORDINARY_FIRES):
             story = self.state.flame_stories.get(titan_id)
             if titan_id in witnessed or not story or not story.get("returned_event_id"):

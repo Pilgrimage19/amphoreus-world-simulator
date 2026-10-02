@@ -892,7 +892,7 @@ class Simulation(FlamechaseMixin):
         if self._is_sky_candidate(person) and region.black_tide >= 25:
             weights["aid"] += 30
             weights["organize"] += 18
-        if self._is_ocean_candidate(person) and region.id == "styxia" and region.black_tide >= 25:
+        if self._is_ocean_candidate(person) and self._ocean_trial_region(region) and region.black_tide >= 25:
             # Phagousa answers detached people who nevertheless choose to
             # guide others through the polluted sea rather than withdraw.
             weights["aid"] += 36
@@ -1039,17 +1039,17 @@ class Simulation(FlamechaseMixin):
     def _record_ocean_passage(self, person: Person, region: Region, action: str) -> None:
         """Record a detached guide repeatedly leading people through Styxia's polluted sea."""
         if (not self._is_ocean_candidate(person) or self.state.year < 50
-                or region.id != "styxia" or region.status == "lost"
+                or not self._ocean_trial_region(region) or region.status == "lost"
                 or region.black_tide < 25 or action not in {"aid", "flee"}):
             return
         if "phagousa_passage_started" not in person.memories:
             person.memories.append("phagousa_passage_started")
-            self._emit("ocean_trial_started", f"{person.name}在斯缇科西亚的污海中第一次为陌生人引航。", ("factor:nihility", "region:styxia:black_tide"), ("trial:phagousa:started",), (person.id,))
+            self._emit("ocean_trial_started", f"{person.name}在{region.name}续接斯缇科西亚的污海传统，第一次为陌生人引航。", ("factor:nihility", f"region:{region.id}:black_tide", "tradition:styxia:seafaring"), ("trial:phagousa:started",), (person.id,))
         previous = person.trial_evidence.get("phagousa", 0)
         evidence = min(OCEAN_PASSAGES_REQUIRED, previous + 1)
         person.trial_evidence["phagousa"] = evidence
         self._record_life_trace(person, "guardianship", responsibility=1)
-        self._credit_impact(person, 1, "在斯缇科西亚的污海中为幸存者引航")
+        self._credit_impact(person, 1, f"在{region.name}续接污海引航，为幸存者开路")
         if previous < OCEAN_PASSAGES_REQUIRED == evidence:
             self._emit("ocean_trial_ready", f"{person.name}五次穿过污海引导幸存者，法古萨的试炼开始回应。", (f"person:{person.id}:ocean_passage",), ("trial:phagousa:ready",), (person.id,))
 
@@ -1184,6 +1184,12 @@ class Simulation(FlamechaseMixin):
             and self._matches_coreflame_factor(person, self.state.titans["zagreus"])
             and (person.life_stage() == "adult" or person.trial_evidence.get("zagreus", 0) > 0)
         )
+
+    def _ocean_trial_region(self, region: Region) -> bool:
+        if region.id == "styxia":
+            return True
+        guild = self.state.organizations.get("styxia_guild")
+        return bool(guild and guild.region_id == region.id and guild.member_ids and guild.influence >= 10)
 
     def _trickery_power_network(self, region: Region) -> bool:
         return (
@@ -1384,7 +1390,7 @@ class Simulation(FlamechaseMixin):
             return
         candidates = [
             other for other in self._people_by_region.get(person.region_id, ())
-            if other.id != person.id and other.id not in person.relations
+            if other.alive and other.id != person.id and other.id not in person.relations
             and other.life_stage() in {"youth", "adult"} and len(other.relations) < 16
             and abs(other.age - person.age) <= 12 and not self._share_parent(person, other)
         ]
@@ -1408,6 +1414,18 @@ class Simulation(FlamechaseMixin):
         """Organizations recruit locally; their members turn individual action into social force."""
         for organization in self.state.organizations.values():
             region = self.state.regions[organization.region_id]
+            if region.status == "lost":
+                surviving_members = [self.state.people[key] for key in organization.member_ids
+                                     if key in self.state.people and self.state.people[key].alive
+                                     and self.state.regions[self.state.people[key].region_id].status != "lost"]
+                if surviving_members and organization.kind in {"学社", "商盟", "葬仪团", "逐火"}:
+                    destinations = {p.region_id for p in surviving_members}
+                    destination_id = max(destinations, key=lambda key: (sum(p.region_id == key for p in surviving_members), key))
+                    old_region = region
+                    organization.region_id = destination_id
+                    organization.influence = max(1, organization.influence // 2)
+                    region = self.state.regions[destination_id]
+                    self._emit("organization_exile", f"{organization.name}随幸存成员离开{old_region.name}，在{region.name}续接旧城的传统。", (f"region:{old_region.id}:lost",), (f"organization:{organization.id}:relocated:{region.id}",), tuple(p.id for p in surviving_members[:4]))
             if region.status == "lost":
                 for person_id in organization.member_ids:
                     person = self.state.people.get(person_id)
@@ -1709,7 +1727,7 @@ class Simulation(FlamechaseMixin):
             self._follow_ocean_anchor_sacrifice(holder)
 
     def _follow_ocean_anchor_sacrifice(self, anchor: Person) -> None:
-        """The Ocean holder follows only when their chosen demi-god returns a fire."""
+        """Follow an actual return or Time's atomic, irrevocable final sacrifice."""
         ocean = self.state.titans["phagousa"]
         if (ocean.coreflame_status != "held" or ocean.coreflame_holder is None
                 or ocean.authority_state.get("anchor_id") != anchor.id):
@@ -1722,9 +1740,9 @@ class Simulation(FlamechaseMixin):
                 continue
             region.tide_source = max(0, region.tide_source - 2)
             region.black_tide = max(region.tide_source, region.black_tide - 2)
-        self._return_coreflame(ocean, holder, f"唯一羁绊{anchor.name}主动献祭后，选择与其同行")
-        self._record_death(holder, f"唯一羁绊{anchor.name}献祭后，随其归还海洋火种")
-        self._emit("ocean_anchor_sacrifice", f"{anchor.name}主动献祭后，{holder.name}循唯一羁绊而去，与海洋火种一同归还；幸存城邦的黑潮残留源随之减弱。", (f"person:{anchor.id}:sacrifice", "coreflame:phagousa"), ("sacrifice:phagousa:followed_anchor", "black_tide_sources:reduced"), (anchor.id, holder.id))
+        self._return_coreflame(ocean, holder, f"唯一羁绊{anchor.name}选择主动献祭，随其同行")
+        self._record_death(holder, f"唯一羁绊{anchor.name}选择献祭，随其归还海洋火种")
+        self._emit("ocean_anchor_sacrifice", f"{anchor.name}选择主动献祭，{holder.name}循唯一羁绊而去，与海洋火种一同归还；幸存城邦的黑潮残留源随之减弱。", (f"person:{anchor.id}:sacrifice", "coreflame:phagousa"), ("sacrifice:phagousa:followed_anchor", "black_tide_sources:reduced"), (anchor.id, holder.id))
 
     def _resolve_gate_authority(self) -> None:
         """Janus opens a final route for an awakened person stranded while fleeing."""
@@ -2006,7 +2024,7 @@ class Simulation(FlamechaseMixin):
             region.tension = max(0, region.tension - 1)
             if self.state.year % 5 == 0:
                 heirs = sorted((p for p in self.state.people.values() if p.alive and p.golden_status != "ordinary" and p.id != holder.id),
-                               key=lambda p: (-p.world_impact, p.id))
+                               key=lambda p: (p.id != self.state.titans["thanatos"].authority_state.get("candidate_id"), p.special_role is None, -p.world_impact, p.id))
                 heir_pair = next(((a, b) for i, a in enumerate(heirs) for b in heirs[i + 1:] if b.id not in a.relations), None)
                 if heir_pair:
                     first, second = heir_pair
