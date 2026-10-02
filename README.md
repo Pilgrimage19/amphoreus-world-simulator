@@ -20,8 +20,28 @@
 - [设计决策记录](docs/decisions/README.md)
 - [设计变更日志](docs/CHANGELOG.md)
 
-## 当前第一目标
+## 当前原型（2026-10-03）
 
-构建一个无画面、确定性的 `微型轮回`：两座城邦、三位规则型泰坦、少量关键人物、一种末日威胁。给定相同种子与玩家操作，模拟结果必须一致；运行结束后能解释世界为何走向该结局。
+七个初始地区、十二泰坦的年度模拟已经接入全部火种的专属试炼、权能与终局条件。居民总人口、独立人物样本、组织、迁徙、黑潮和城邦失陷共同生成历史；相同种子可复现相同结果。
 
-当前已有 Python 命令行原型；运行方式见[实现说明](docs/05-python-prototype.md)。
+网页是观察面板：可以推进年度、查看十二因子行者、逐火史、泰坦权能与再创世尚未满足的条件；世界结束后停止推进。
+
+十枚常规火种先归还，稀有的岁月持有者见证其故事并倒数第二归还，稀有的负世者最后接纳十一枚印记。当前终局是“再创世准备完成”；下一代世界生成和跨世界轮回尚未实现。
+
+当前规则优先阅读 [HANDOFF](docs/HANDOFF.md) 和 [P-0004](docs/prototypes/P-0004-complete-flamechase-and-story-links.md)，本轮考据与原创机制的区分见 [L-0003](docs/lore/L-0003-flamechase-canon-adaptation.md)。
+
+只能使用项目专属 Conda 环境：
+
+```powershell
+$env:PYTHONPATH = 'src'
+conda run --no-capture-output -n amphoreus-world-simulator python -m unittest discover -s tests -v
+conda run --no-capture-output -n amphoreus-world-simulator python -m amphoreus_sim.web --seed 42
+```
+
+网页地址：`http://127.0.0.1:8000`。
+
+长程审计：
+
+```powershell
+conda run --no-capture-output -n amphoreus-world-simulator python -m amphoreus_sim.audit --seeds 42 7 2026 --ticks 2000 --population 1000 --summary --output simulation-output/audit.json
+```

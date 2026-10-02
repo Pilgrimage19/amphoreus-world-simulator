@@ -25,8 +25,11 @@ class SimulationTests(unittest.TestCase):
 
         self.assertIsNone(simulation._check_ending())
 
-    def test_recreation_requires_eleven_returned_fires_and_the_worldbearer(self) -> None:
+    def test_recreation_rejects_counts_without_traceable_flame_stories(self) -> None:
         simulation = Simulation(42, population=100)
+        from amphoreus_sim.flamechase import ORDINARY_FIRES
+        holder = simulation.state.people["person-0001"]
+        holder.special_role = "perfect_vessel"
         for titan_id, titan in simulation.state.titans.items():
             if titan_id == "kephale":
                 titan.coreflame_status = "held"
@@ -35,7 +38,10 @@ class SimulationTests(unittest.TestCase):
                 titan.coreflame_status = "returned"
                 titan.coreflame_holder = None
 
-        self.assertIs(simulation._check_ending(), EndingKind.RECREATION_READY)
+        simulation.state.titans["oronyx"].authority_state["witnessed_fire_ids"] = sorted(ORDINARY_FIRES)
+        simulation.state.titans["kephale"].authority_state["compatible_fire_ids"] = sorted(ORDINARY_FIRES | {"oronyx"})
+
+        self.assertIsNone(simulation._check_ending())
 
     def test_regions_have_mixed_titan_faiths_and_people_have_stances(self) -> None:
         simulation = Simulation(42, population=100)
@@ -693,7 +699,7 @@ class SimulationTests(unittest.TestCase):
         self.assertEqual(zagreus.coreflame_holder, candidate.id)
         self.assertIn("zagreus_lie_confessed", candidate.memories)
 
-    def test_trickery_authority_exposes_five_organizations_then_returns_fire(self) -> None:
+    def test_trickery_authority_preserves_dawn_until_a_final_handover(self) -> None:
         simulation = Simulation(42, population=100)
         holder = simulation.state.people["person-0001"]
         zagreus = simulation.state.titans["zagreus"]
@@ -704,11 +710,15 @@ class SimulationTests(unittest.TestCase):
         aquila = simulation.state.titans["aquila"]
         aquila.corruption = 20
 
-        for year in range(10, 60, 10):
+        for year in range(1, 51):
             simulation.state.year = year
             simulation._resolve_trickery_authority()
 
         self.assertEqual(len(zagreus.authority_state["exposed_organization_ids"]), 5)
+        self.assertEqual(zagreus.coreflame_status, "held")
+        aquila.authority_state["healing_used"] = 1
+        simulation.state.year = 51
+        simulation._resolve_trickery_authority()
         self.assertEqual(zagreus.coreflame_status, "returned")
         self.assertFalse(holder.alive)
         self.assertEqual(aquila.corruption, 15)
@@ -858,6 +868,7 @@ class SimulationTests(unittest.TestCase):
         simulation._inherit_coreflame(simulation.state.titans["cerces"], holder, "测试瑟希斯四证")
         candidate = simulation.state.people["person-0001"]
         candidate.golden_status = "awakened"
+        simulation._resolve_reason_authority()
 
         simulation._inherit_coreflame(simulation.state.titans["georios"], candidate, "测试守土试炼")
 

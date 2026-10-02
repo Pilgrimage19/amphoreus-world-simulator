@@ -206,6 +206,7 @@ class Person:
     relations: dict[str, Relation] = field(default_factory=dict)
     coreflames: list[str] = field(default_factory=list)
     returned_coreflames: list[str] = field(default_factory=list)
+    special_role: str | None = None
     # Lasting, cumulative evidence for future fire trials. Keys are created
     # only when a life actually leaves that kind of mark.
     life_traces: dict[str, int] = field(default_factory=dict)
@@ -273,3 +274,6 @@ class WorldState:
     crises: dict[str, Crisis] = field(default_factory=dict)
     refuge_crises: dict[str, RefugeCrisis] = field(default_factory=dict)
     events: list[Event] = field(default_factory=list)
+    flame_stories: dict[str, dict[str, object]] = field(default_factory=dict)
+    pending_souls: int = 0
+    ferried_souls: int = 0

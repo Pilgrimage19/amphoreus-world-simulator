@@ -40,11 +40,19 @@ function render(state) {
   const unstable = regions.slice().sort((a, b) => (b.black_tide + b.tension) - (a.black_tide + a.tension))[0];
   const fires = Object.values(state.titans).filter((titan) => titan.coreflame_holder);
   const titanNames = Object.fromEntries(Object.values(state.titans).map((titan) => [titan.id, titan.name]));
+  const stories = Object.values(state.flame_stories || {});
+  const personNames = Object.fromEntries([
+    ...Object.values(state.historical_focus || {}), ...Object.values(state.historical_archive || {}),
+    ...Object.values(state.factor_paths || {}), ...stories.map((story) => ({id: story.holder_id, name: story.holder_name})),
+  ].map((person) => [person.id, person.name]));
+  const personName = (id) => personNames[id] || "尚未相遇";
   byId("overview-summary").innerHTML = `<div class="section-title"><h2>本年世界判断</h2><span>由系统状态自动归纳</span></div>
     <p>${unstable ? `最需要关注的是<strong>${unstable.name}</strong>：黑潮 ${unstable.black_tide}，社会紧张 ${unstable.tension}。` : "正在等待地区数据。"}</p>
     <p>世界劫余为 ${state.world_wear}：它代表尚未再创世而累积的不可逆损伤，会在长期抬高黑潮残留源并削弱泰坦。</p>
     <p>已被承接的火种：${fires.length ? fires.map((titan) => `${titan.name}（${titan.domain}）`).join("、") : "尚无"}。</p>
-    <p>人物栏只显示十二因子中各自走得最远的一人；完整人物档案仍保留在世界历史中，不会因重复动作挤占观察面板。</p>`;
+    <p>十枚常规火种已归还 ${state.recreation?.ordinary_fires_returned || 0}/10；冥河已引渡 ${state.souls?.ferried || 0} 位已登记亡者。</p>
+    <p>再创世尚待：${state.recreation?.blockers?.length ? state.recreation.blockers.join("；") : "见证与承载已经完成"}。</p>
+    <p>人物栏只显示十二因子中各自走得最远的一人；完整人物档案仍保留在世界历史中。</p>`;
 
   byId("regions").innerHTML = regions.map((region) => `
     <div class="region-card">
@@ -69,16 +77,24 @@ function render(state) {
     const authority = titan.authority_state || {};
     const authorityText = authority.rescue_charges !== undefined ? `门径救援额度 ${authority.rescue_charges}`
       : authority.storm_burden !== undefined ? `天空预警 ${authority.warnings_issued || 0} · 风暴负担 ${authority.storm_burden} · 治愈 ${authority.healing_used ? "已使用" : "待命"}`
-      : authority.anchor_id !== undefined ? `海洋羁绊 ${authority.anchor_id || "尚未相遇"} · 航行 ${authority.voyages || 0} · 污染负担 ${authority.pollution_burden || 0}`
-      : Array.isArray(authority.exposed_organization_ids) ? `诡计揭密 ${authority.exposed_organization_ids.length}/5 · 面具负担 ${authority.mask_burden || 0}`
+      : authority.anchor_id !== undefined ? `海洋羁绊 ${personName(authority.anchor_id)} · 航行 ${authority.voyages || 0} · 污染负担 ${authority.pollution_burden || 0}`
+      : Array.isArray(authority.exposed_organization_ids) ? `守护黎明 ${authority.dawn_years || 0} 年 · ${authority.dawn_active ? "晨光仍在" : "秘密已交接"} · 面具负担 ${authority.mask_burden || 0}`
       : authority.bonded_region_id ? `守土绑定 ${authority.bonded_region_id} · 土地负担 ${authority.land_burden || 0}`
-      : authority.bound_organization_id !== undefined ? `律法刚性 ${authority.rigidity || 0} · 绑定组织 ${authority.bound_organization_id || "无"}`
-      : authority.weave_count !== undefined ? `浪漫织结 ${authority.weave_count} · 情感负担 ${authority.emotional_burden || 0}`
+      : authority.bound_organization_id !== undefined ? `律法裁断 ${authority.judgment_count || 0} · 刚性 ${authority.rigidity || 0}`
+      : authority.weave_count !== undefined ? `浪漫织结 ${authority.weave_count} · 黄金裔联结 ${authority.heir_links || 0} · 情感负担 ${authority.emotional_burden || 0}`
       : Array.isArray(authority.created_demigod_ids) ? `理性培养 ${authority.created_demigod_ids.length}/3 名半神`
-      : "尚无已实现的专属权能";
+      : authority.in_underworld ? `冥界引渡 ${authority.souls_guided || 0} · 羁绊 ${personName(authority.bond_id)}`
+      : Array.isArray(authority.curse_victim_ids) ? `死亡试炼：厄运 ${authority.curse_victim_ids.length}/3 · 等待主动羁绊`
+      : authority.journey_years !== undefined ? `纷争行旅 ${authority.journey_years} 年 · 复兴据点 ${authority.refuge_ids?.length || 0}`
+      : authority.challenge_count !== undefined ? `正面挑战 ${authority.challenge_count} 次 · 胜负尚未终结`
+      : Array.isArray(authority.witnessed_fire_ids) ? `岁月见证 ${authority.witnessed_fire_ids.length}/10 · 记忆负担 ${authority.memory_burden || 0}`
+      : Array.isArray(authority.compatible_fire_ids) ? `负世接纳 ${authority.compatible_fire_ids.length}/11 · 世界重量 ${authority.world_burden || 0}`
+      : titan.id === "oronyx" ? "等待无暇之灵魂完成忆页三问"
+      : titan.id === "kephale" ? "等待完美之容器承担真实灾难"
+      : "等待候选通过专属试炼";
     const flameText = titan.coreflame_status === "returned"
       ? `${coreflameStatusNames.returned}（第 ${titan.coreflame_returned_year} 年）`
-      : titan.coreflame_holder ? `${coreflameStatusNames.held}：${titan.coreflame_holder}`
+      : titan.coreflame_holder ? `${coreflameStatusNames.held}：${personName(titan.coreflame_holder)}`
       : coreflameStatusNames[titan.coreflame_status] || "火种状态未知";
     return `
     <div class="titan-card">
@@ -89,6 +105,12 @@ function render(state) {
       <em>${flameText}</em>
     </div>`;
   }).join("");
+
+  byId("flame-stories").innerHTML = stories.sort((a, b) => a.inherited_year - b.inherited_year || a.titan_id.localeCompare(b.titan_id)).map((story) => `
+    <div class="event-row"><strong>${story.domain} · ${story.holder_name}</strong><span>
+    第 ${story.inherited_year} 年承接：${story.trial}<br>
+    ${story.returned_year !== null ? `第 ${story.returned_year} 年归还：${story.return_reason}<br>留下：${story.imprint}` : "仍在承担神权，故事尚未结束"}
+    </span></div>`).join("") || "<p class='empty'>逐火史尚未开始。</p>";
 
   byId("organizations").innerHTML = Object.values(state.organizations).map((organization) => `
     <div class="organization-card">
