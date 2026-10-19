@@ -11,6 +11,7 @@ from threading import RLock
 from urllib.parse import urlparse
 
 from .models import EndingKind
+from .observation import build_observation, person_observation
 from .simulation import Simulation
 
 
@@ -29,6 +30,7 @@ class WorldServer(ThreadingHTTPServer):
         self.ending: EndingKind | None = None
         self.ending_summary: str | None = None
         self._world_lock = RLock()
+        self._last_advance: dict | None = None
 
     def snapshot(self) -> dict[str, object]:
         with self._world_lock:
@@ -37,11 +39,18 @@ class WorldServer(ThreadingHTTPServer):
             snapshot["ended"] = self.ending is not None
             snapshot["ending"] = self.ending.value if self.ending is not None else None
             snapshot["ending_summary"] = self.ending_summary
+            snapshot["observation"] = build_observation(
+                self.simulation.state, ending=snapshot["ending"],
+                ending_summary=self.ending_summary, last_advance=self._last_advance,
+            )
             return snapshot
 
     def advance(self, years: int = 1) -> None:
         """Advance only while this interactive world has not reached an ending."""
         with self._world_lock:
+            from_year = self.simulation.state.year
+            event_index = len(self.simulation.state.events)
+            population = sum(region.population for region in self.simulation.state.regions.values())
             for _ in range(years):
                 if self.ending is not None:
                     break
@@ -56,6 +65,8 @@ class WorldServer(ThreadingHTTPServer):
                         ),
                         self.simulation._ending_summary(ending),
                     )
+            if self.simulation.state.year != from_year:
+                self._last_advance = {"from_year": from_year, "event_index": event_index, "population": population}
 
     def reset(self, seed: int | None = None) -> None:
         with self._world_lock:
@@ -63,6 +74,13 @@ class WorldServer(ThreadingHTTPServer):
             self.simulation = Simulation(seed=self.seed, population=self.population)
             self.ending = None
             self.ending_summary = None
+            self._last_advance = None
+
+    def advance_snapshot(self, years: int = 1) -> dict[str, object]:
+        """Keep a request's batch recap and returned state in the same lock."""
+        with self._world_lock:
+            self.advance(years)
+            return self.snapshot()
 
     def person_detail(self, person_id: str) -> dict[str, object] | None:
         with self._world_lock:
@@ -93,6 +111,7 @@ class WorldServer(ThreadingHTTPServer):
                 {**relation.snapshot(), "target_name": self.simulation.state.people[relation.target_id].name}
                 for relation in person.relations.values() if relation.target_id in self.simulation.state.people
             ]
+            detail.update(person_observation(person, self.simulation.state))
             return detail
 
 
@@ -121,8 +140,7 @@ class WorldRequestHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:  # noqa: N802 - required by BaseHTTPRequestHandler
         path = urlparse(self.path).path
         if path == "/api/step":
-            self.server.advance()
-            self._json(self.server.snapshot())
+            self._json(self.server.advance_snapshot())
         elif path == "/api/advance":
             body = self._body()
             if body is None:
@@ -131,8 +149,7 @@ class WorldRequestHandler(BaseHTTPRequestHandler):
             if not isinstance(years, int) or isinstance(years, bool):
                 self._json_error(HTTPStatus.BAD_REQUEST, "years 必须是整数")
                 return
-            self.server.advance(max(1, min(100, years)))
-            self._json(self.server.snapshot())
+            self._json(self.server.advance_snapshot(max(1, min(100, years))))
         elif path == "/api/reset":
             body = self._body()
             if body is None:
@@ -141,8 +158,9 @@ class WorldRequestHandler(BaseHTTPRequestHandler):
             if seed is not None and (not isinstance(seed, int) or isinstance(seed, bool)):
                 self._json_error(HTTPStatus.BAD_REQUEST, "seed 必须是整数")
                 return
-            self.server.reset(seed)
-            self._json(self.server.snapshot())
+            with self.server._world_lock:
+                self.server.reset(seed)
+                self._json(self.server.snapshot())
         else:
             self.send_error(HTTPStatus.NOT_FOUND)
 
