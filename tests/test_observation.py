@@ -141,6 +141,13 @@ class ObservationTests(unittest.TestCase):
             baseline.step()
         self.assertEqual(self.sim.state_hash(), baseline.state_hash())
 
+    def test_prepared_snapshot_is_not_rewritten_by_later_story_updates(self):
+        snapshot = self.sim.world_snapshot(compact=True)
+        previous = copy.deepcopy(snapshot["flame_stories"])
+        self.sim.state.flame_stories["janus"]["return_reason"] = "后来才发生的交接"
+        self.sim.state.flame_stories["janus"]["supporter_ids"].append("later-person")
+        self.assertEqual(snapshot["flame_stories"], previous)
+
 
 if __name__ == "__main__":
     unittest.main()

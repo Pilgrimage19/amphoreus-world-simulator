@@ -31,8 +31,24 @@
     </nav>
 
     <section class="view-panel active" id="overview-view">
-      <section class="metrics" id="metrics"></section>
-      <article class="overview-card" id="overview-summary"></article>
+      <article class="chapter-card" id="chapter"></article>
+      <section class="metrics compact-metrics" id="metrics"></section>
+      <section class="layout story-layout">
+        <article>
+          <div class="section-title"><h2>本阶段重大事件</h2><span id="highlights-label">来自完整事件档案</span></div>
+          <div id="highlights" class="events scroll-list" tabindex="0" role="region" aria-label="本阶段重大事件"></div>
+        </article>
+        <article>
+          <div class="section-title"><h2>本阶段人物</h2><span>从逐火档案选取</span></div>
+          <div id="spotlight" class="spotlight-list scroll-list" tabindex="0" role="region" aria-label="逐火档案人物"></div>
+        </article>
+      </section>
+      <article class="recap-card" id="recap"></article>
+      <article class="ending-card" id="ending" hidden></article>
+      <details class="debug-details">
+        <summary>原始状态与调试数字</summary>
+        <div id="overview-summary" class="overview-card"></div>
+      </details>
     </section>
 
     <section class="view-panel" id="regions-view">
@@ -58,32 +74,37 @@
       </article>
     </section>
     <section class="view-panel" id="history-view">
-      <section class="layout bottom-layout">
       <article>
-        <div class="section-title"><h2>组织与势力</h2><span>成员、领袖、目的与影响力</span></div>
-        <div id="organizations" class="organizations scroll-list" tabindex="0" role="region" aria-label="组织与势力列表"></div>
+        <div class="section-title"><h2>重大事件时间轴</h2><span>按年份排列；可从事件查看相关人物</span></div>
+        <div id="timeline" class="timeline scroll-list" tabindex="0" role="region" aria-label="重大事件时间轴"></div>
       </article>
-      <article>
-        <div class="section-title"><h2>最近历史</h2><span>最近 25 条结构化事件</span></div>
-        <div id="events" class="events scroll-list" tabindex="0" role="region" aria-label="最近历史列表" aria-live="polite"></div>
-      </article>
-    </section>
-      <section class="layout bottom-layout">
-        <article>
-          <div class="section-title"><h2>黑潮危机</h2><span>正在发生或已被稳定的地区事件</span></div>
-          <div id="crises" class="events scroll-list" tabindex="0" role="region" aria-label="黑潮危机列表"></div>
-        </article>
-        <article>
-          <div class="section-title"><h2>难民与资源危机</h2><span>由避难容量突破触发的多年事件</span></div>
-          <div id="refuge-crises" class="events scroll-list" tabindex="0" role="region" aria-label="难民与资源危机列表"></div>
-        </article>
-      </section>
-      <section class="layout bottom-layout">
+      <details class="debug-details">
+        <summary>原始日志与系统记录</summary>
+        <section class="layout bottom-layout">
+          <article>
+            <div class="section-title"><h2>最近原始日志</h2><span>服务端保留的近期记录</span></div>
+            <div id="events" class="events scroll-list" tabindex="0" role="region" aria-label="最近原始日志" aria-live="polite"></div>
+          </article>
+          <article>
+            <div class="section-title"><h2>组织与势力</h2><span>成员、领袖、目的与影响力</span></div>
+            <div id="organizations" class="organizations scroll-list" tabindex="0" role="region" aria-label="组织与势力列表"></div>
+          </article>
+        </section>
+        <section class="layout bottom-layout">
+          <article>
+            <div class="section-title"><h2>黑潮危机记录</h2><span>应对状态与参与人数</span></div>
+            <div id="crises" class="events scroll-list" tabindex="0" role="region" aria-label="黑潮危机列表"></div>
+          </article>
+          <article>
+            <div class="section-title"><h2>难民与资源危机</h2><span>由避难容量突破触发的多年事件</span></div>
+            <div id="refuge-crises" class="events scroll-list" tabindex="0" role="region" aria-label="难民与资源危机列表"></div>
+          </article>
+        </section>
         <article>
           <div class="section-title"><h2>已故因子行者</h2><span>与在世行者合计最多十二人</span></div>
           <div id="archive" class="people scroll-list" tabindex="0" role="region" aria-label="已故因子行者列表"></div>
         </article>
-      </section>
+      </details>
     </section>
   </main>
   <script src="/app.js"></script>

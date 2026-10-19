@@ -1,7 +1,7 @@
 # P-0005：从开发者观察台到逐火年代记
 
 日期：2026-10-19
-状态：本轮先实现只读叙事与信息架构；后续机制/数值调整不混入本轮。
+状态：观察层、人物层已实现并验收；后续机制/数值调整不混入本轮。
 
 ## 产品目标
 
@@ -37,6 +37,8 @@ last_event_id: string | null
 `EventCard` 为 `{id, year, type, title, summary, people:[{id,name}], causal_event_ids:[string]}`。`people` 是事件记录涉及的人物，不能一概称为决策者；因果引用只展示确实指向原始事件的引用，不从性格或相同年份推断因果。重复事实按事件 ID 去重。
 
 `GET /api/person/<id>` 保留已有字段，新增：
+
+网页请求额外携带 `X-Amphoreus-View: compact`，历史人物列表仅投影焦点及逐火关联人物，完整档案仍可按人物 ID 查询。无此请求头的旧客户端保留完整快照；所有投影只读，不消费随机数。
 
 ```text
 journey: [EventCard]                   # 完整事件中确实涉及此人的重大节点

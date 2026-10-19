@@ -32,9 +32,9 @@ class WorldServer(ThreadingHTTPServer):
         self._world_lock = RLock()
         self._last_advance: dict | None = None
 
-    def snapshot(self) -> dict[str, object]:
+    def snapshot(self, *, compact: bool = False) -> dict[str, object]:
         with self._world_lock:
-            snapshot = self.simulation.world_snapshot()
+            snapshot = self.simulation.world_snapshot(compact=compact)
             snapshot["seed"] = self.seed
             snapshot["ended"] = self.ending is not None
             snapshot["ending"] = self.ending.value if self.ending is not None else None
@@ -76,11 +76,11 @@ class WorldServer(ThreadingHTTPServer):
             self.ending_summary = None
             self._last_advance = None
 
-    def advance_snapshot(self, years: int = 1) -> dict[str, object]:
+    def advance_snapshot(self, years: int = 1, *, compact: bool = False) -> dict[str, object]:
         """Keep a request's batch recap and returned state in the same lock."""
         with self._world_lock:
             self.advance(years)
-            return self.snapshot()
+            return self.snapshot(compact=compact)
 
     def person_detail(self, person_id: str) -> dict[str, object] | None:
         with self._world_lock:
@@ -121,7 +121,7 @@ class WorldRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802 - required by BaseHTTPRequestHandler
         path = urlparse(self.path).path
         if path == "/api/state":
-            self._json(self.server.snapshot())
+            self._json(self.server.snapshot(compact=self.headers.get("X-Amphoreus-View") == "compact"))
         elif path.startswith("/api/person/"):
             detail = self.server.person_detail(path.rsplit("/", 1)[-1])
             if detail is None:
@@ -139,8 +139,9 @@ class WorldRequestHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802 - required by BaseHTTPRequestHandler
         path = urlparse(self.path).path
+        compact = self.headers.get("X-Amphoreus-View") == "compact"
         if path == "/api/step":
-            self._json(self.server.advance_snapshot())
+            self._json(self.server.advance_snapshot(compact=compact))
         elif path == "/api/advance":
             body = self._body()
             if body is None:
@@ -149,7 +150,7 @@ class WorldRequestHandler(BaseHTTPRequestHandler):
             if not isinstance(years, int) or isinstance(years, bool):
                 self._json_error(HTTPStatus.BAD_REQUEST, "years 必须是整数")
                 return
-            self._json(self.server.advance_snapshot(max(1, min(100, years))))
+            self._json(self.server.advance_snapshot(max(1, min(100, years)), compact=compact))
         elif path == "/api/reset":
             body = self._body()
             if body is None:
@@ -160,7 +161,7 @@ class WorldRequestHandler(BaseHTTPRequestHandler):
                 return
             with self.server._world_lock:
                 self.server.reset(seed)
-                self._json(self.server.snapshot())
+                self._json(self.server.snapshot(compact=compact))
         else:
             self.send_error(HTTPStatus.NOT_FOUND)
 

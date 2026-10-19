@@ -26,10 +26,12 @@ class WorldServerTests(unittest.TestCase):
         payload: object | None = None,
         *,
         raw_body: bytes | None = None,
+        extra_headers: dict[str, str] | None = None,
     ) -> tuple[int, str, bytes]:
         connection = HTTPConnection(*self.server.server_address, timeout=5)
         body = raw_body if raw_body is not None else (json.dumps(payload).encode("utf-8") if payload is not None else None)
         headers = {"Content-Type": "application/json"} if body is not None else {}
+        headers.update(extra_headers or {})
         connection.request(method, path, body=body, headers=headers)
         response = connection.getresponse()
         response_body = response.read()
@@ -153,7 +155,8 @@ class WorldServerTests(unittest.TestCase):
         javascript = script.decode("utf-8")
         self.assertIn('byId("advance-century").addEventListener("click"', javascript)
         self.assertIn('body: JSON.stringify({years: 100})', javascript)
-        self.assertIn('byId("advance-century").disabled = actionInFlight || ended', javascript)
+        self.assertIn('["step", "advance", "advance-century"]', javascript)
+        self.assertIn('byId(id).disabled = actionInFlight || ended', javascript)
         status, _, body = self.request("POST", "/api/advance", {"years": 100})
         self.assertEqual(status, 200)
         self.assertEqual(json.loads(body)["year"], 100)
@@ -194,6 +197,8 @@ class WorldServerTests(unittest.TestCase):
         self.assertIn("region_name", detail)
         self.assertEqual(detail["origin_region_name"], "雅努萨波利斯")
         self.assertIn("relationship_details", detail)
+        self.assertIn("journey", detail)
+        self.assertEqual(len(detail["attribute_guide"]["abilities"]), 4)
 
         self.assertEqual(self.request("GET", "/api/person/not-found")[0], 404)
         self.assertEqual(self.request("GET", "/not-found")[0], 404)
@@ -203,6 +208,44 @@ class WorldServerTests(unittest.TestCase):
         with ThreadPoolExecutor(max_workers=8) as executor:
             list(executor.map(lambda _: self.server.advance(2), range(8)))
         self.assertEqual(self.server.snapshot()["year"], 16)
+
+    def test_observation_recap_tracks_a_real_batch_and_reset_clears_it(self) -> None:
+        self.assertIsNone(self.server.snapshot()["observation"]["recap"])
+        status, _, body = self.request("POST", "/api/advance", {"years": 10})
+        self.assertEqual(status, 200)
+        recap = json.loads(body)["observation"]["recap"]
+        self.assertEqual((recap["from_year"], recap["to_year"]), (0, 10))
+        self.assertEqual(self.server.snapshot()["observation"]["recap"], recap)
+        self.server.reset(seed=7)
+        self.assertIsNone(self.server.snapshot()["observation"]["recap"])
+
+    def test_concurrent_batch_snapshots_belong_to_their_own_advance(self) -> None:
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            snapshots = list(executor.map(lambda _: self.server.advance_snapshot(2), range(4)))
+        self.assertEqual(sorted(snapshot["year"] for snapshot in snapshots), [2, 4, 6, 8])
+        for snapshot in snapshots:
+            recap = snapshot["observation"]["recap"]
+            self.assertEqual(recap["to_year"], snapshot["year"])
+            self.assertEqual(recap["to_year"] - recap["from_year"], 2)
+
+    def test_compact_view_preserves_full_archive_and_on_demand_person_details(self) -> None:
+        for person in self.server.simulation.state.people.values():
+            if person.id != "tribios":
+                person.alive = False
+                person.golden_status = "awakened"
+        before = self.server.simulation.state_hash()
+        _, _, full_body = self.request("GET", "/api/state")
+        _, _, compact_body = self.request("GET", "/api/state", extra_headers={"X-Amphoreus-View": "compact"})
+        full, compact = json.loads(full_body), json.loads(compact_body)
+        self.assertGreater(len(full["historical_archive"]), len(compact["historical_archive"]))
+        for field in ("factor_paths", "titans", "regions", "observation", "population"):
+            self.assertEqual(full[field], compact[field])
+        omitted = next(key for key in full["historical_archive"] if key not in compact["historical_archive"])
+        status, _, body = self.request("GET", f"/api/person/{omitted}")
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body)["id"], omitted)
+        self.assertEqual(self.server.simulation.state_hash(), before)
+        self.assertLess(len(compact_body), len(full_body))
 
 
 if __name__ == "__main__":

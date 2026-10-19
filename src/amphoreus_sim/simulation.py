@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from copy import deepcopy
 from hashlib import sha256
 import json
 
@@ -2232,15 +2233,22 @@ class Simulation(FlamechaseMixin):
             leaders[factor.value] = {**leader.snapshot(), "path_factor": factor.value}
         return leaders
 
-    def world_snapshot(self, include_events: bool = False) -> dict[str, object]:
+    def world_snapshot(self, include_events: bool = False, *, compact: bool = False) -> dict[str, object]:
         alive = [p for p in self.state.people.values() if p.alive]
         focus = sorted(
             (p for p in alive if p.world_impact >= HISTORICAL_IMPACT_THRESHOLD or p.coreflames or p.golden_status != "ordinary"),
             key=lambda p: (-p.world_impact, -p.influence, p.id),
         )[:30]
+        factor_paths = self._factor_path_leaders()
+        named_ids = {str(person["id"]) for person in factor_paths.values()}
+        if compact:
+            named_ids.update(str(story.get("holder_id", "")) for story in self.state.flame_stories.values())
+            for titan in self.state.titans.values():
+                named_ids.update(str(titan.authority_state.get(key, "")) for key in ("anchor_id", "bond_id", "last_message_holder_id"))
         archive = sorted(
             (p for p in self.state.people.values()
-             if not p.alive and (p.world_impact >= HISTORICAL_IMPACT_THRESHOLD or p.coreflames or p.golden_status != "ordinary")),
+             if not p.alive and (not compact or p.id in named_ids)
+             and (p.world_impact >= HISTORICAL_IMPACT_THRESHOLD or p.coreflames or p.golden_status != "ordinary")),
             key=lambda p: (-(p.death_year or 0), -p.world_impact, p.id),
         )
         regions = {
@@ -2250,7 +2258,7 @@ class Simulation(FlamechaseMixin):
         data: dict[str, object] = {
             "year": self.state.year,
             "world_wear": self.state.world_wear,
-            "flame_stories": self.state.flame_stories,
+            "flame_stories": deepcopy(self.state.flame_stories),
             "recreation": {"blockers": self._recreation_blockers(),
                            "ordinary_fires_returned": sum(self.state.titans[k].coreflame_status == "returned" for k in ORDINARY_FIRES),
                            "special_candidates": [{"id": p.id, "name": p.name, "role": p.special_role, "alive": p.alive}
@@ -2266,7 +2274,7 @@ class Simulation(FlamechaseMixin):
             "organizations": {key: value.snapshot() for key, value in sorted(self.state.organizations.items())},
             "historical_focus": {p.id: p.snapshot() for p in focus},
             "historical_archive": {p.id: p.snapshot() for p in archive},
-            "factor_paths": self._factor_path_leaders(),
+            "factor_paths": factor_paths,
             "crises": {key: value.snapshot() for key, value in sorted(self.state.crises.items())},
             "refuge_crises": {key: value.snapshot() for key, value in sorted(self.state.refuge_crises.items())},
             "recent_events": [event.snapshot() for event in self.state.events[-25:]],
