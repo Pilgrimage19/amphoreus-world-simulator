@@ -146,6 +146,29 @@ class WorldServerTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(json.loads(body)["year"], 100)
 
+    def test_hundred_year_button_is_served_and_advances_a_full_century(self) -> None:
+        _, _, html = self.request("GET", "/")
+        self.assertIn('<button id="advance-century">推进 100 年</button>', html.decode("utf-8"))
+        _, _, script = self.request("GET", "/app.js")
+        javascript = script.decode("utf-8")
+        self.assertIn('byId("advance-century").addEventListener("click"', javascript)
+        self.assertIn('body: JSON.stringify({years: 100})', javascript)
+        self.assertIn('byId("advance-century").disabled = actionInFlight || ended', javascript)
+        status, _, body = self.request("POST", "/api/advance", {"years": 100})
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body)["year"], 100)
+
+    def test_hundred_year_advance_stops_at_an_ending(self) -> None:
+        for region in self.server.simulation.state.regions.values():
+            region.status = "lost"
+        status, _, body = self.request("POST", "/api/advance", {"years": 100})
+        state = json.loads(body)
+        self.assertEqual(status, 200)
+        self.assertEqual(state["year"], 1)
+        self.assertTrue(state["ended"])
+        status, _, body = self.request("POST", "/api/advance", {"years": 100})
+        self.assertEqual(json.loads(body)["year"], 1)
+
     def test_invalid_json_and_field_types_return_json_errors_without_advancing(self) -> None:
         cases = (
             ("/api/advance", b"{"),

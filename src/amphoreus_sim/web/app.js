@@ -11,6 +11,7 @@ let worldEnded = false;
 function updateControlState(ended = false) {
   byId("step").disabled = actionInFlight || ended;
   byId("advance").disabled = actionInFlight || ended;
+  byId("advance-century").disabled = actionInFlight || ended;
   byId("reset").disabled = actionInFlight;
 }
 
@@ -223,6 +224,9 @@ async function runWorldAction(path, options, clearSelection = false) {
 byId("step").addEventListener("click", () => runWorldAction("/api/step", {method: "POST"}));
 byId("advance").addEventListener("click", () => runWorldAction("/api/advance", {
   method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({years: 10}),
+}));
+byId("advance-century").addEventListener("click", () => runWorldAction("/api/advance", {
+  method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({years: 100}),
 }));
 byId("reset").addEventListener("click", () => runWorldAction("/api/reset", {
   method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({}),
