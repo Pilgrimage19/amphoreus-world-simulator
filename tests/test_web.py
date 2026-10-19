@@ -1,5 +1,6 @@
 from concurrent.futures import ThreadPoolExecutor
 from http.client import HTTPConnection
+from html.parser import HTMLParser
 import json
 from threading import Thread
 import unittest
@@ -106,6 +107,34 @@ class WorldServerTests(unittest.TestCase):
         self.assertEqual(reset_state["seed"], 7)
         self.assertEqual(reset_state["year"], 0)
         self.assertFalse(reset_state["ended"])
+
+    def test_growing_history_lists_are_accessible_internal_scroll_regions(self) -> None:
+        class ListParser(HTMLParser):
+            def __init__(self):
+                super().__init__()
+                self.elements = {}
+
+            def handle_starttag(self, tag, attrs):
+                attributes = dict(attrs)
+                if attributes.get("id"):
+                    self.elements[attributes["id"]] = attributes
+
+        _, _, body = self.request("GET", "/")
+        parser = ListParser()
+        parser.feed(body.decode("utf-8"))
+        for list_id in ("flame-stories", "organizations", "events", "crises", "refuge-crises", "archive"):
+            with self.subTest(list_id=list_id):
+                attributes = parser.elements[list_id]
+                self.assertIn("scroll-list", attributes.get("class", "").split())
+                self.assertEqual(attributes.get("tabindex"), "0")
+                self.assertEqual(attributes.get("role"), "region")
+                self.assertTrue(attributes.get("aria-label"))
+        _, _, stylesheet = self.request("GET", "/style.css")
+        css = stylesheet.decode("utf-8")
+        self.assertIn("max-height:clamp(16rem,45vh,28rem)", css)
+        self.assertIn("overflow-y:auto", css)
+        self.assertIn("overscroll-behavior-y:contain", css)
+        self.assertIn(".scroll-list:focus-visible", css)
 
     def test_http_advance_is_bounded_to_one_through_one_hundred_years(self) -> None:
         status, _, body = self.request("POST", "/api/advance", {"years": 0})
